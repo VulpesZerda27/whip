@@ -7,22 +7,30 @@ last chat controls ships in 1.8.10.
 
 ## Recommendation
 
-Keep the shared daemon. For the existing workflow, fix the Codex TUI → Herdr
-association at the client: the terminal client must report the full ID of the
-conversation it is currently displaying. Herdr should accept that association
-only from the current terminal/client generation. Whip can then continue using
-its existing Herdr integration and transcript reader.
+Revised after the user's feedback: maintaining a modified Codex client is not
+viable for this setup. Keep official Codex and the shared daemon. The preferred
+direction is a direct Codex app-server backend in Whip, with conversations keyed
+by host and full thread ID rather than by Herdr pane.
 
-This is a proposed Codex/Herdr integration change, not an existing configuration
-switch. It requires a small maintained Codex patch or upstream support, plus
-Herdr ownership and lifecycle handling. An APK-only change cannot make the
-missing terminal identity authoritative.
+That removes the chat UI's dependence on the broken pane association. Existing
+Codex conversations can be discovered by the daemon API; new chats would retain
+the thread ID returned when created. The intended desktop/phone behavior is to
+access the same backend conversation. Full history, concurrent interaction and
+reconnection still need isolated validation before this design is considered
+ready to implement. Current evidence establishes read-only connectivity and
+metadata discovery on all four hosts, not those complete flows.
 
-A direct Codex app-server backend in Whip is feasible and attractive for a
-future chat-first architecture. It would give Whip explicit thread IDs,
-structured input, events and approval requests. It is a larger change and does
-not, by itself, tell us which existing terminal is displaying a thread. It is
-therefore not a prerequisite for fixing this incident.
+Opening the exact existing terminal pane is optional under this design. Where
+the association is unknown, a terminal action could attach a TUI explicitly to
+the selected thread instead. The old recommendation over-prioritized preserving
+exact pane linkage and is withdrawn. Its proposed client reporter remains below
+as a possible upstream solution, not a requirement for Whip's chat backend.
+
+This direction requires more work in Whip, including native transport and
+conversation-state migration, but no Codex fork. The daemon API's experimental
+surfaces require compatibility tests, particularly for existing paginated
+history. Claude's existing backend can remain in use. No integration changes
+have been implemented.
 
 ## Confirmed cause
 
@@ -134,9 +142,10 @@ These approaches do not provide a durable fix:
 The title truncation is in the
 [0.162.1 title renderer](https://github.com/openai/codex/blob/092d3acd6bec3e3a14bdc7e7a2810ab628ab759d/codex-rs/tui/src/chatwidget/status_surfaces.rs#L949).
 
-## Proposed implementation contract
+## Alternative requiring upstream support or a Codex patch
 
-The smallest durable change for the existing workflow has three parts:
+Preserving authoritative mapping to the exact existing terminal pane would
+require three parts. This is not the selected approach for our setup:
 
 1. **Codex TUI reports its own displayed thread.** Send the full thread ID when
    initial selection completes, when a thread is resumed or newly created,
@@ -173,13 +182,12 @@ this signal. Auto-updates must not silently replace that patched client. This
 needs a deliberate version/deployment strategy on all four servers; it is not
 a reason to restart existing work or downgrade the daemon during investigation.
 
-## Optional next architecture: native daemon-backed Codex chats
+## Preferred architecture: native daemon-backed Codex chats
 
-If avoiding a Codex client fork is more important than attaching to the exact
-existing terminal pane, Whip can instead make `(host, provider, thread.id)` its
-Codex conversation identity and access the app-server through SSH. Opening a
-terminal could explicitly attach a new TUI to that known ID. That is a different
-terminal workflow and should be an intentional product decision.
+Whip should make `(host, provider, thread.id)` its Codex conversation identity
+and access the app-server through SSH. Opening a terminal could explicitly
+attach a new TUI to that known ID when no reliable existing-pane association is
+available. That terminal behavior should be made clear in the UI.
 
 This would reuse chat rendering, voice, file access and server credentials, but
 requires a provider transport, API-event projection, reconnect reconciliation,
