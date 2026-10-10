@@ -28,6 +28,11 @@ function linkText(raw: string): string {
   });
 }
 
+function webDestination(value: string): string | null {
+  if (!/^(?:https?:\/\/|www\.)[^\s<>\\]+$/i.test(value)) return null;
+  return /^www\./i.test(value) ? `https://${value}` : value;
+}
+
 /** Keep source formatting verbatim; decline structures whose child offsets differ. */
 function rewriteChildren(raw: string, children: readonly Token[]): string {
   let cursor = 0;
@@ -59,7 +64,7 @@ function rewriteToken(token: Token): string {
     }
     case 'codespan': {
       const code = token as Tokens.Codespan;
-      const destination = fileDestination(code.text);
+      const destination = webDestination(code.text) ?? fileDestination(code.text);
       return destination ? `[${code.raw}](<${destination}>)` : code.raw;
     }
     case 'list':
@@ -74,7 +79,7 @@ function rewriteToken(token: Token): string {
   }
 }
 
-/** Add file taps to transcript prose without modifying fenced code or existing links. */
+/** Link filenames and code-span URLs; preserve fenced code and existing/GFM links. */
 export function linkTranscriptFiles(markdown: string): string {
   return rewriteChildren(markdown, Lexer.lex(markdown));
 }

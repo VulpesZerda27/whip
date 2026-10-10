@@ -457,20 +457,24 @@ describe('AgentChatView links', () => {
     act(() => { rows = create(renderedBlocks(renderer)); });
     const stopPropagation = jest.fn();
     act(() => {
+      rows.root.findByProps({ accessibilityLabel: `Open link ${url}` }).props.onPress({ stopPropagation });
+    });
+    expect(rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState).props.accessibilityState.expanded).toBe(false);
+    act(() => {
       rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityLabel === `Open ${url}`).props.onPress({ stopPropagation });
       rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState?.expanded === false).props.onPress();
     });
     act(() => { rows.update(renderedBlocks(renderer)); });
     act(() => { rows.root.find(node => String(node.type) === 'MarkdownText').props.onLinkPress({ url }); });
     expect(stopPropagation).toHaveBeenCalled();
-    expect(onOpenWebLink.mock.calls).toEqual([[url], [url]]);
+    expect(onOpenWebLink.mock.calls).toEqual([[url], [url], [url]]);
     // A tool with no detail opens its URL from the whole row too.
     act(() => {
       renderer.update(<AgentChatView {...chatView(chatState([toolTurn({ ...tool, state: { ...tool.state, output: undefined } })])).props} onOpenWebLink={onOpenWebLink} />);
     });
     act(() => { rows.update(renderedBlocks(renderer)); });
     act(() => { rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState).props.onPress(); });
-    expect(onOpenWebLink).toHaveBeenCalledTimes(3);
+    expect(onOpenWebLink).toHaveBeenCalledTimes(4);
   });
 });
 

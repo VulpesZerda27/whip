@@ -348,10 +348,10 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           {displayedSubtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
-              {presentation.kind === 'file' && presentation.href ? (
+              {presentation.href ? (
                 <Pressable
                   accessibilityRole="link"
-                  accessibilityLabel={`Open file ${displayedSubtitle}`}
+                  accessibilityLabel={`Open ${presentation.kind === 'file' ? 'file' : 'link'} ${displayedSubtitle}`}
                   className="min-h-9 min-w-0 shrink justify-center"
                   hitSlop={SMALL_ICON_HIT_SLOP}
                   onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}

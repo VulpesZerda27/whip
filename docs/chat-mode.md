@@ -82,7 +82,9 @@ use the conversation's working directory. Read/write tool cards also have tappab
 filenames. PNGs and other supported images open in the zoomable image viewer;
 documents use the existing file previews. Local Markdown images become preview
 links instead of trying to load server paths from the phone. Files are fetched
-only when opened; code blocks and existing web links retain their behavior.
+only when opened. Web links open the built-in browser, including bare URLs,
+Markdown links, standalone URLs in backticks, and URLs on web tool cards.
+Fenced code and shell commands retain their original formatting.
 
 Live questions and approval menus appear below the latest response. Choose an
 option, then confirm it. Controls are bound to the current terminal and prompt;

@@ -33,7 +33,10 @@ test.each([
   '```sh\noutput.png',
   '    cat output.png\n',
   '`python output.py` and `cat /tmp/result.png` and `$HOME/image.png`',
-  '`https://example.com/a.png` https://example.com/b.png',
+  'https://example.com/a.png?width=100&height=200#preview and www.example.com',
+  '`curl https://example.com/a.png` and `https://example.com/a b`',
+  '```sh\ncurl https://example.com\n```\n',
+  '`javascript:alert(1)` and `data:text/plain,hello`',
   '[`image.png`](https://example.com/a.png)',
   '[result](artifacts/a.png "Preview")',
   '[result][image]\n\n[image]: artifacts/a.png\n',
@@ -41,6 +44,17 @@ test.each([
   'Version 1.8.6; example.com; 127.0.0.1; x.y',
 ])('preserves code, external links and existing Markdown: %s', source => {
   expect(linkTranscriptFiles(source)).toBe(source);
+});
+
+test.each([
+  ['https://example.com/a.png?width=100&height=200#preview', 'https://example.com/a.png?width=100&height=200#preview'],
+  ['http://localhost:3000/preview', 'http://localhost:3000/preview'],
+  ['https://example.com/a_(b)', 'https://example.com/a_(b)'],
+  ['www.example.com/docs', 'https://www.example.com/docs'],
+])('makes a standalone URL in inline code tappable: %s', (url, destination) => {
+  const result = linkTranscriptFiles(`Open \`${url}\`.`);
+  expect(result).toBe(`Open [\`${url}\`](<${destination}>).`);
+  expect(linkTranscriptFiles(result)).toBe(result);
 });
 
 test('links filenames within lists, formatting and tables', () => {
