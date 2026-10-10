@@ -82,7 +82,7 @@ use the conversation's working directory. Read/write tool cards also have tappab
 filenames. PNGs and other supported images open in the zoomable image viewer;
 documents use the existing file previews. Local Markdown images become preview
 links instead of trying to load server paths from the phone. Files are fetched
-only when opened. Web links open the built-in browser, including bare URLs,
+only when opened. Web links in replies open the built-in browser, including bare URLs,
 Markdown links, standalone URLs in backticks, and URLs on web tool cards.
 Fenced code and shell commands retain their original formatting.
 
@@ -150,6 +150,14 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.7 passes all 201 Jest suites (2,274 tests) for file taps, followed by
+152 focused file/link tests after adding inline-code web URLs and web tool taps.
+TypeScript, changed-file ESLint and the app-version check pass. The signed ARM64
+release builds and its signature verifies. Installation over 1.8.6 preserves
+the emulator's saved SSH server and credentials. Tapping a PNG Read card in a
+live Claude conversation opens the actual remote image; double-tap zoom works.
+A source link in a live Claude reply also opens its website in the built-in browser.
 
 Version 1.8.6 passes 167 focused tests across chat ordering, navigation, session
 opening, composer behavior and keyboard layout, plus TypeScript, changed-file
