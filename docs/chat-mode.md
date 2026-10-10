@@ -141,6 +141,14 @@ The signing key is private and is never included in the APK or repository.
 
 ## Validation
 
+Version 1.8.6 passes 167 focused tests across chat ordering, navigation, session
+opening, composer behavior and keyboard layout, plus TypeScript, changed-file
+ESLint and the app-version check. The signed release was installed over 1.8.5 on
+the Android 16 emulator; its saved server and credentials survived. Live chat was
+checked with a simulated camera cutout, scrolled history, and the keyboard both
+open and closed. The title remains below the cutout and the composer covers the
+bottom gesture area.
+
 Version 1.8.5 passes all 200 Jest suites (2,246 tests), TypeScript, ESLint,
 597 Rust tests, strict Rust Clippy, and the repository's app-version check.
 The previous release also passed Expo Doctor's 20 checks. The
