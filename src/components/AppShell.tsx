@@ -48,6 +48,8 @@ import {
 import { BottomNavigation } from './BottomNavigation';
 import { ConnectRequiredScreen } from './ConnectRequiredScreen';
 import { ChatsScreen } from './ChatsScreen';
+import { useChatLibrary } from '../hooks/useChatLibrary';
+import { useChatExperience } from '../hooks/useChatExperience';
 import { GlassProvider } from './GlassSurface';
 import { HerdScreen } from './HerdScreen';
 import { HostsScreen } from './HostsScreen';
@@ -137,6 +139,11 @@ export function AppShell({
       activeSession &&
       terminals.get(activeSession.id, sessions.state).activeTerminalId,
   );
+  const chatLibrary = useChatLibrary();
+  const activeChatTerminalId = activeSession ? terminals.get(activeSession.id, sessions.state).activeTerminalId : null;
+  const activeChatPaneId = activeSession?.snapshot.panes.find(pane => pane.terminal_id === activeChatTerminalId)?.pane_id;
+  const chatExperience = useChatExperience(chatLibrary, sessions, navigation, hosts.hosts,
+    activeChatPaneId, !security.locked && !hosts.editorProfile);
   const fullscreenVisible = immersiveTerminal
     ? activeTerminalVisible && terminalPreferences.fullscreen
     : fullscreenApp;
@@ -312,6 +319,10 @@ export function AppShell({
                     style={navigation.state.tab === 'chats' ? styles.tabScreen : styles.hiddenTab}
                   >
                     <ChatsScreen
+                      library={chatLibrary}
+                      onOpenChat={chatExperience.open}
+                      resumeError={chatExperience.error}
+                      resuming={chatExperience.resuming}
                       hosts={hosts.hosts}
                       sessions={sessions}
                       onManageHosts={() => navigation.selectTab('hosts')}
@@ -632,6 +643,8 @@ export function AppShell({
                 activeSession && (
                   <AgentStatusAnimationProvider enabled={terminalVisible}>
                     <LiveSessionView
+                      draftSaveError={terminals.draftError}
+                      onToggleReadAloud={() => preferences.setPreference('ttsEnabled', !ttsEnabled)}
                       preferChat={navigation.state.lastNonTerminalTab === 'chats'}
                       session={activeSession}
                       client={liveClient}

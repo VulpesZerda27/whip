@@ -16,6 +16,7 @@ import {
   PersistedTerminalsWriter,
 } from '../services/persistedTerminals';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
+import { ComposerDraftStorage } from '../services/composerDrafts';
 
 type CoreBinding = {
   core: NativeAppCore;
@@ -26,6 +27,9 @@ type CoreBinding = {
 export function useTerminalSessions() {
   const coreBindingRef = useRef<CoreBinding | null>(null);
   const composerDraftsRef = useRef(new Map<string, string>());
+  const editedDraftsRef = useRef(new Set<string>());
+  const draftStorage = useRef(new ComposerDraftStorage());
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [fontSizes, setFontSizes] = useState<ReadonlyMap<string, number>>(
     () => new Map(),
   );
@@ -104,6 +108,17 @@ export function useTerminalSessions() {
       isCurrent: () => boolean,
     ): Promise<TerminalSessionsState> => {
       const persisted = await loadPersistedTerminals(hostId);
+      try {
+        const drafts = await draftStorage.current.load(hostId);
+        if (isCurrent()) {
+          for (const [terminalId, draft] of Object.entries(drafts)) {
+            const key = terminalKey(sessionId, terminalId);
+            if (!editedDraftsRef.current.has(key)) composerDraftsRef.current.set(key, draft.text);
+          }
+        }
+      } catch {
+        setDraftError('Saved drafts could not be restored. Keep a copy of important text.');
+      }
       if (!isCurrent()) return emptyTerminalSessions;
       const next = new Map(fontSizesRef.current);
       for (const [terminalId, fontSize] of persisted.fontSizes) {
@@ -237,15 +252,23 @@ export function useTerminalSessions() {
   const updateComposerDraft = useCallback(
     (sessionId: string, terminalId: string, value: string) => {
       const key = terminalKey(sessionId, terminalId);
+      editedDraftsRef.current.add(key);
       if (value) composerDraftsRef.current.set(key, value);
       else composerDraftsRef.current.delete(key);
+      const hostId = requireCore().core.view().sessions.find(session => session.id === sessionId)?.hostId;
+      if (hostId) reportBackgroundFailure(
+        draftStorage.current.save(hostId, terminalId, value).then(() => setDraftError(null)).catch(() => {
+          setDraftError('This draft could not be saved. Keep the app open or copy your text.');
+        }), 'composer-draft-save',
+      );
     },
-    [],
+    [requireCore],
   );
 
   return useMemo(
     () => ({
       fontSizes,
+      draftError,
       bindAppCore,
       persistProjection,
       get,
@@ -271,6 +294,7 @@ export function useTerminalSessions() {
       remove,
       restore,
       fontSizes,
+      draftError,
       updateComposerDraft,
       updateFontSize,
       updateLifecycle,

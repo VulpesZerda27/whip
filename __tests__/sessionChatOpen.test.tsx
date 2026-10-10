@@ -546,6 +546,20 @@ function revealChat() {
   expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
 }
 
+test.each(['codex', 'claude'] as const)('live %s approval controls use the selected chat binding', async agent => {
+  const host = setup(agent);
+  host.pane.agent_status = 'blocked';
+  await openReadyChat(host, agent);
+  revealChat();
+  const interaction = ui('AgentChatView').props.interactionControls;
+  expect(interaction.props.enabled).toBe(true);
+  expect(interaction.props.target.native).toBe(host.native);
+  expect(interaction.props.target.terminalId).toBe(host.pane.terminal_id);
+  expect(interaction.props.target.bindingToken).toBeTruthy();
+  act(() => { renderer.update(<SessionScreen {...host.props} visible={false} />); });
+  expect(ui('AgentChatView').props.interactionControls.props.enabled).toBe(false);
+});
+
 test('chat web links open in app without a global browser preference', async () => {
   const host = setup('codex');
   await openReadyChat(host, 'codex');

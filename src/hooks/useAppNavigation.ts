@@ -45,6 +45,7 @@ export interface AppNavigationController {
     workspaceId: string | null,
   ) => void;
   showTerminal: (sessionId?: string) => void;
+  showChat: () => void;
   showHerd: (sessionId?: string, workspaceId?: string | null) => void;
   clearSessionView: (sessionId: string) => void;
   openLicenses: () => void;
@@ -174,6 +175,11 @@ export function useAppNavigation({
     setState(current => selectMobileTab(current, 'terminal'));
   }, []);
 
+  const showChat = useCallback(() => {
+    setSelectedPaneId(null);
+    setState(current => selectMobileTab(selectMobileTab(current, 'chats'), 'terminal'));
+  }, []);
+
   const showHerd = useCallback(
     (sessionId?: string, workspaceId?: string | null) => {
       if (sessionId) {
@@ -211,6 +217,7 @@ export function useAppNavigation({
       selectHerdHost: setHerdHostFilterId,
       setHerdWorkspaceFilter,
       showTerminal,
+      showChat,
       showHerd,
       clearSessionView,
       openLicenses,
@@ -229,6 +236,7 @@ export function useAppNavigation({
       setHerdWorkspaceFilter,
       showHerd,
       showTerminal,
+      showChat,
       state,
     ],
   );

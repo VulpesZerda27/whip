@@ -5,8 +5,9 @@
 <h1 align="center">Whip</h1>
 
 > **Personal Whip Chat fork:** chat-first navigation, Codex/Claude launcher with
-> server/model/effort selection, automatic review defaults, and Android voice
-> dictation. See [Chat mode and APK installation](docs/chat-mode.md).
+> server/model/effort selection, automatic review defaults, Android voice
+> dictation, favorite projects, saved drafts, resume, an attention inbox, and
+> inline question/approval controls. See [Chat mode and APK installation](docs/chat-mode.md).
 > Upstream: [kosumic/whip](https://github.com/kosumic/whip).
 
 <p align="center">

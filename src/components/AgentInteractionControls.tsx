@@ -9,6 +9,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { cn } from '../lib/utils';
+import { useAppForeground } from '../hooks/useAppForeground';
 
 export interface AgentInteractionTarget {
   native: Pick<
@@ -39,6 +40,7 @@ export function AgentInteractionControls({
   onOpenTerminal?: () => void;
 }) {
   const { native, terminalId, bindingToken } = target;
+  const foreground = useAppForeground();
   const [prompt, setPrompt] = useState<NativeAgentInteractionPrompt>();
   const [answer, setAnswer] = useState('');
   const [error, setError] = useState<string>();
@@ -52,6 +54,12 @@ export function AgentInteractionControls({
   const refreshRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   useEffect(() => {
+    setAnswer('');
+    setSubmittedToken(undefined);
+    setShowTerminalControls(false);
+  }, [native, terminalId, bindingToken, enabled]);
+
+  useEffect(() => {
     const current = ++generation.current;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let reading = false;
@@ -59,12 +67,9 @@ export function AgentInteractionControls({
     setError(undefined);
     setResponseError(undefined);
     setLoaded(false);
-    setAnswer('');
     setBusy(false);
-    setSubmittedToken(undefined);
-    setShowTerminalControls(false);
     sending.current = false;
-    if (!enabled) return;
+    if (!enabled || !foreground) return;
     const refresh = async () => {
       if (reading || sending.current || current !== generation.current) return;
       reading = true;
@@ -98,12 +103,12 @@ export function AgentInteractionControls({
       generation.current = current + 1;
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [native, terminalId, bindingToken, enabled]);
+  }, [native, terminalId, bindingToken, enabled, foreground]);
 
   const waiting = prompt !== undefined && prompt.token === submittedToken;
   const disabled = busy || waiting;
   const respond = async (action: string) => {
-    if (!enabled || !prompt || disabled || sending.current) return;
+    if (!enabled || !foreground || !prompt || disabled || sending.current) return;
     const current = generation.current;
     const submitting =
       action === 'open' ||
@@ -148,7 +153,7 @@ export function AgentInteractionControls({
     }
   };
 
-  if (!enabled) return null;
+  if (!enabled || !foreground) return null;
   if (loaded && !prompt && !error && !responseError) return null;
   const displayedError = error || responseError;
   const queued = prompt?.kind === NativeAgentInteractionKind.QueuedQuestion;

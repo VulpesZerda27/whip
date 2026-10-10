@@ -88,7 +88,7 @@ export interface SessionRuntimeController {
     profile: ConnectionProfile,
     options?: ConnectOptions,
   ) => Promise<boolean>;
-  connectSavedHost: (host: HostProfile) => Promise<void>;
+  connectSavedHost: (host: HostProfile, options?: { navigate?: boolean }) => Promise<void>;
   close: (sessionId: string, recordDisconnect?: boolean) => Promise<void>;
   closeHostById: (hostId: string, recordDisconnect?: boolean) => Promise<void>;
   refresh: (sessionId: string) => Promise<void>;
@@ -255,6 +255,8 @@ export function useSessionRuntimeManager({
     getState,
     hosts,
     openPaneTerminal: terminal.openPaneTerminal,
+    openChat: () => navigation.showChat(),
+    revision: state,
   });
 
   const presentationSessions = useMemo(() => {

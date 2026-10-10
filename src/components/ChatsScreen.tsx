@@ -5,9 +5,10 @@ import {
   ScrollView,
   View,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from 'react-native';
-import { MessageCircle, Plus, Server, X } from 'lucide-react-native';
+import { MessageCircle, Plus, Server, Star, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
@@ -33,12 +34,29 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { StatusBadge } from './app-ui';
+import type { ChatLibraryController } from '../hooks/useChatLibrary';
+import {
+  chatKey,
+  emptyChatLibrary,
+  type ChatFavorite,
+  type RecentChat,
+} from '../services/chatLibrary';
+import { chatNeedsAttention } from '../lib/chatInbox';
+import {
+  checkChatReadiness,
+  readinessIssues,
+  type ChatReadiness,
+} from '../services/chatReadiness';
 
 interface Props {
   hosts: HostProfile[];
   sessions: SessionRuntimeController;
   onManageHosts: () => void;
   onShowChats: () => void;
+  library?: ChatLibraryController;
+  onOpenChat?: (target: RecentChat) => Promise<void>;
+  resumeError?: string | null;
+  resuming?: boolean;
 }
 
 export function ChatsScreen({
@@ -46,6 +64,10 @@ export function ChatsScreen({
   sessions,
   onManageHosts,
   onShowChats,
+  library,
+  onOpenChat,
+  resumeError,
+  resuming = false,
 }: Props) {
   const { colors } = useTheme();
   const { bottom } = useSafeAreaInsets();
@@ -62,6 +84,18 @@ export function ChatsScreen({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsYouOnly, setNeedsYouOnly] = useState(false);
+  const [readiness, setReadiness] = useState<ChatReadiness | null>(null);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [checkRevision, setCheckRevision] = useState(0);
+  const [favoriteSaved, setFavoriteSaved] = useState(false);
+  const [selectedFavorite, setSelectedFavorite] = useState<string | null>(null);
+  const saved = library?.value ?? emptyChatLibrary;
+  const serverLabel = (id: string) => {
+    const savedHost = hosts.find(item => item.id === id);
+    return savedHost ? hostDisplayName(savedHost) : 'Server removed';
+  };
   const provider = preferences.provider;
   const options = preferences.providers[provider];
   const host = hosts.find(item => item.id === preferences.hostId) ?? hosts[0];
@@ -69,11 +103,17 @@ export function ChatsScreen({
     item => item.hostId === host?.id,
   );
   const workspaces = session?.snapshot.workspaces ?? [];
+  const workspaceDirectory = (id: string) =>
+    workspaces.find(item => item.workspace_id === id)?.worktree
+      ?.checkout_path ||
+    session?.snapshot.panes?.find(item => item.workspace_id === id && item.cwd)
+      ?.cwd ||
+    '';
   const selectedWorkspaceId =
     workspaceSelection?.hostId === host?.id
       ? (workspaceSelection?.workspaceId ?? '')
       : (workspaces[0]?.workspace_id ?? '');
-  const agents = sessions.presentationSessions.flatMap(item =>
+  const allAgents = sessions.presentationSessions.flatMap(item =>
     item.snapshot.agents
       .filter(
         agent =>
@@ -81,6 +121,57 @@ export function ChatsScreen({
       )
       .map(agent => ({ session: item, agent })),
   );
+  const needsYouCount = allAgents.filter(({ session: item, agent }) =>
+    chatNeedsAttention(
+      agent,
+      saved.activity[chatKey(item.hostId, agent.pane_id)],
+    ),
+  ).length;
+  const agents = allAgents
+    .filter(
+      ({ session: item, agent }) =>
+        !needsYouOnly ||
+        chatNeedsAttention(
+          agent,
+          saved.activity[chatKey(item.hostId, agent.pane_id)],
+        ),
+    )
+    .sort((a, b) => {
+      const aActivity =
+        saved.activity[chatKey(a.session.hostId, a.agent.pane_id)];
+      const bActivity =
+        saved.activity[chatKey(b.session.hostId, b.agent.pane_id)];
+      return (
+        Number(chatNeedsAttention(b.agent, bActivity)) -
+          Number(chatNeedsAttention(a.agent, aActivity)) ||
+        (bActivity?.updatedAt ?? 0) - (aActivity?.updatedAt ?? 0)
+      );
+    });
+  const native =
+    session?.connectionStatus === 'ready'
+      ? sessions.getClient?.(session.id)?.native
+      : undefined;
+  useEffect(() => {
+    let cancelled = false;
+    setReadiness(null);
+    setReadinessError(null);
+    setChecking(false);
+    if (!creating || !native) return;
+    setChecking(true);
+    checkChatReadiness(native, provider)
+      .then(result => {
+        if (!cancelled) setReadiness(result);
+      })
+      .catch(reason => {
+        if (!cancelled) setReadinessError(String(reason));
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [creating, native, provider, checkRevision]);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +207,7 @@ export function ChatsScreen({
     setBusy(true);
     setError(null);
     try {
-      await sessions.connectSavedHost(selectedHost);
+      await sessions.connectSavedHost(selectedHost, { navigate: false });
       const connected = sessions
         .getState()
         .sessions.find(item => item.hostId === selectedHost.id);
@@ -160,17 +251,38 @@ export function ChatsScreen({
     setBusy(true);
     try {
       const intent = chatLaunchIntent({ provider, ...options });
+      if (!native)
+        throw new Error('Connect to the server before starting an agent.');
+      const checked = await checkChatReadiness(native, provider);
+      setReadiness(checked);
+      const issues = readinessIssues(checked, provider);
+      if (
+        checked.cli === 'missing' ||
+        checked.cli === 'login-required' ||
+        checked.integration !== 'current'
+      ) {
+        throw new Error(issues.join('\n'));
+      }
       // Save before creating remote resources; a storage failure must not duplicate a launch.
       await saveChatLaunchPreferences({ ...preferences, hostId: host.id });
-      const workspace = directory.trim()
-        ? (
-            await sessions.createWorkspace(
-              session.id,
-              name.trim() || 'Chat',
-              directory.trim(),
+      const favoriteWorkspace =
+        selectedFavorite && directory.trim()
+          ? workspaces.find(
+              item =>
+                workspaceDirectory(item.workspace_id) === directory.trim(),
             )
-          ).workspace_id
-        : selectedWorkspaceId;
+          : undefined;
+      const workspace =
+        favoriteWorkspace?.workspace_id ??
+        (directory.trim()
+          ? (
+              await sessions.createWorkspace(
+                session.id,
+                name.trim() || 'Chat',
+                directory.trim(),
+              )
+            ).workspace_id
+          : selectedWorkspaceId);
       // Keep an already-created workspace selected if a later launch fails.
       setWorkspaceSelection({ hostId: host.id, workspaceId: workspace });
       setDirectory('');
@@ -183,6 +295,80 @@ export function ChatsScreen({
       busyRef.current = false;
       setBusy(false);
     }
+  };
+
+  const saveFavorite = () => {
+    if (!host || !library?.loaded) return;
+    const workspace = workspaces.find(
+      item => item.workspace_id === selectedWorkspaceId,
+    );
+    const path = directory.trim() || workspaceDirectory(selectedWorkspaceId);
+    if (!path && !selectedWorkspaceId) {
+      setError('Choose a workspace or enter a project directory first.');
+      return;
+    }
+    const label =
+      name.trim() ||
+      workspace?.label ||
+      path.split('/').filter(Boolean).at(-1) ||
+      'Project';
+    const favorite: ChatFavorite = {
+      id: chatKey(host.id, `${provider}:${path || selectedWorkspaceId}`),
+      hostId: host.id,
+      label,
+      directory: path,
+      workspaceId: directory.trim() ? '' : selectedWorkspaceId,
+      provider,
+      ...options,
+    };
+    library.update(previous => ({
+      ...previous,
+      favorites: [
+        favorite,
+        ...previous.favorites.filter(item => item.id !== favorite.id),
+      ].slice(0, 30),
+    }));
+    setFavoriteSaved(true);
+  };
+  const openFavorite = (favorite: ChatFavorite) => {
+    if (!hosts.some(item => item.id === favorite.hostId)) {
+      setError('This favorite’s server was removed. Add it again in Hosts.');
+      return;
+    }
+    setPreferences(current => ({
+      ...current,
+      provider: favorite.provider,
+      hostId: favorite.hostId,
+      providers: {
+        ...current.providers,
+        [favorite.provider]: { model: favorite.model, effort: favorite.effort },
+      },
+    }));
+    const live = sessions.presentationSessions.find(
+      item => item.hostId === favorite.hostId,
+    );
+    const workspace = live?.snapshot.workspaces.find(
+      item =>
+        item.workspace_id === favorite.workspaceId ||
+        (favorite.directory &&
+          (item.worktree?.checkout_path === favorite.directory ||
+            live.snapshot.panes?.some(
+              pane =>
+                pane.workspace_id === item.workspace_id &&
+                pane.cwd === favorite.directory,
+            ))),
+    );
+    setWorkspaceSelection(
+      workspace
+        ? { hostId: favorite.hostId, workspaceId: workspace.workspace_id }
+        : null,
+    );
+    setDirectory(workspace ? '' : favorite.directory);
+    setName(favorite.label);
+    setFavoriteSaved(false);
+    setSelectedFavorite(favorite.id);
+    setError(null);
+    setCreating(true);
   };
 
   return (
@@ -200,6 +386,8 @@ export function ChatsScreen({
           className="size-12 rounded-full"
           onPress={() => {
             setError(null);
+            setFavoriteSaved(false);
+            setSelectedFavorite(null);
             setCreating(true);
           }}
         >
@@ -212,6 +400,11 @@ export function ChatsScreen({
           showsHorizontalScrollIndicator={false}
           contentContainerClassName="gap-2"
         >
+          <Choice
+            label={`Needs you (${needsYouCount})`}
+            selected={needsYouOnly}
+            onPress={() => setNeedsYouOnly(value => !value)}
+          />
           <Choice
             label="All servers"
             selected={filter === null}
@@ -231,6 +424,93 @@ export function ChatsScreen({
         contentContainerStyle={{ paddingBottom: bottomNavigationInset(bottom) }}
         className="flex-1 px-5"
       >
+        {library?.error || resumeError ? (
+          <Text
+            accessibilityRole="alert"
+            className="mb-3 text-sm text-destructive"
+          >
+            {library?.error || resumeError}
+          </Text>
+        ) : null}
+        {saved.lastChat && onOpenChat ? (
+          <View className="mb-5 gap-2">
+            <Button
+              accessibilityLabel="Resume last chat"
+              variant="secondary"
+              disabled={resuming}
+              className="h-auto flex-col items-start rounded-2xl p-4"
+              onPress={() => {
+                void onOpenChat(saved.lastChat!);
+              }}
+            >
+              <Text className="font-semibold">
+                {resuming ? 'Reconnecting…' : 'Resume last chat'}
+              </Text>
+              <Text className="text-sm text-muted-foreground" numberOfLines={1}>
+                {saved.lastChat.label} · {serverLabel(saved.lastChat.hostId)}
+              </Text>
+            </Button>
+            <Button
+              variant="ghost"
+              className="self-start"
+              accessibilityLabel="Resume last chat on launch"
+              accessibilityRole="switch"
+              accessibilityState={{ checked: saved.resumeOnLaunch }}
+              onPress={() =>
+                library?.update(previous => ({
+                  ...previous,
+                  resumeOnLaunch: !previous.resumeOnLaunch,
+                }))
+              }
+            >
+              <Text className="text-xs text-muted-foreground">
+                Open on launch: {saved.resumeOnLaunch ? 'On' : 'Off'}
+              </Text>
+            </Button>
+          </View>
+        ) : null}
+        {saved.favorites.length > 0 ? (
+          <View className="mb-5 gap-2">
+            <Text className="text-sm font-semibold">Favorite projects</Text>
+            {saved.favorites.map(favorite => (
+              <View key={favorite.id} className="flex-row items-center gap-2">
+                <Button
+                  disabled={busy}
+                  variant="outline"
+                  className="h-auto min-w-0 flex-1 flex-col items-start rounded-2xl p-4"
+                  accessibilityLabel={`Start favorite ${favorite.label}`}
+                  onPress={() => openFavorite(favorite)}
+                >
+                  <Text className="font-semibold" numberOfLines={1}>
+                    {favorite.label}
+                  </Text>
+                  <Text
+                    className="text-xs text-muted-foreground"
+                    numberOfLines={1}
+                  >
+                    {serverLabel(favorite.hostId)} · {favorite.provider} ·{' '}
+                    {favorite.model || 'Default model'} · {favorite.effort}
+                  </Text>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  accessibilityLabel={`Remove favorite ${favorite.label}`}
+                  onPress={() =>
+                    library?.update(previous => ({
+                      ...previous,
+                      favorites: previous.favorites.filter(
+                        item => item.id !== favorite.id,
+                      ),
+                    }))
+                  }
+                >
+                  <X size={18} color={colors.textSecondary} />
+                </Button>
+              </View>
+            ))}
+          </View>
+        ) : null}
         {error && !creating ? (
           <Text
             accessibilityRole="alert"
@@ -274,9 +554,17 @@ export function ChatsScreen({
             <Button
               key={`${agentSession.id}:${agent.pane_id}`}
               variant="outline"
-              className="mb-3 h-auto items-start rounded-2xl p-4"
+              className="mb-3 h-auto flex-col items-start rounded-2xl p-4"
               accessibilityLabel={`Open chat ${tab?.label || agent.agent} on ${hostDisplayName(agentSession.host)}`}
-              onPress={() => sessions.openAgentTerminal(agentSession.id, agent)}
+              onPress={() => {
+                if (onOpenChat)
+                  void onOpenChat({
+                    hostId: agentSession.hostId,
+                    paneId: agent.pane_id,
+                    label: tab?.label || agent.agent || 'Conversation',
+                  });
+                else sessions.openAgentTerminal(agentSession.id, agent);
+              }}
             >
               <View className="w-full flex-row items-center justify-between gap-2">
                 <Text
@@ -286,6 +574,15 @@ export function ChatsScreen({
                   {tab?.label || (agent.agent === 'codex' ? 'Codex' : 'Claude')}
                 </Text>
                 <StatusBadge status={agent.agent_status} />
+                {agent.agent_status === 'done' &&
+                chatNeedsAttention(
+                  agent,
+                  saved.activity[chatKey(agentSession.hostId, agent.pane_id)],
+                ) ? (
+                  <Text className="text-xs font-semibold text-primary">
+                    New
+                  </Text>
+                ) : null}
               </View>
               <Text
                 className="mt-2 text-xs text-muted-foreground"
@@ -303,11 +600,12 @@ export function ChatsScreen({
           <View className="items-center px-6 py-14">
             <MessageCircle size={40} color={colors.textSecondary} />
             <Text className="mt-5 text-lg font-semibold">
-              A little room to think
+              {needsYouOnly ? 'All caught up' : 'A little room to think'}
             </Text>
             <Text className="mt-2 text-center text-sm leading-6 text-muted-foreground">
-              Connect a server, then start a Codex or Claude conversation. Your
-              existing agents appear here too.
+              {needsYouOnly
+                ? 'No agents need your attention in this view.'
+                : 'Connect a server, then start a Codex or Claude conversation. Your existing agents appear here too.'}
             </Text>
             <Button
               variant="secondary"
@@ -323,7 +621,9 @@ export function ChatsScreen({
         visible={creating}
         animationType="slide"
         onRequestClose={() => {
-          if (!busy) setCreating(false);
+          if (busy) return;
+          if (Keyboard.isVisible()) Keyboard.dismiss();
+          else setCreating(false);
         }}
       >
         <KeyboardAvoidingView
@@ -388,6 +688,89 @@ export function ChatsScreen({
                 </Button>
               ) : null}
             </Field>
+            {native ? (
+              <Field label="Server readiness">
+                {checking ? (
+                  <Text className="text-sm text-muted-foreground">
+                    Checking CLI, login and chat integration…
+                  </Text>
+                ) : null}
+                {readiness ? (
+                  <>
+                    {readiness.version ? (
+                      <Text className="text-sm">{readiness.version}</Text>
+                    ) : null}
+                    {readinessIssues(readiness, provider).length === 0 ? (
+                      <Text className="text-sm text-muted-foreground">
+                        Credentials present · chat integration ready
+                      </Text>
+                    ) : (
+                      readinessIssues(readiness, provider).map(issue => (
+                        <Text
+                          key={issue}
+                          className="mt-1 text-sm text-destructive"
+                        >
+                          {issue}
+                        </Text>
+                      ))
+                    )}
+                  </>
+                ) : null}
+                {readinessError ? (
+                  <Text className="text-sm text-destructive">
+                    {readinessError}
+                  </Text>
+                ) : null}
+                <View className="mt-2 flex-row flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={checking || busy}
+                    onPress={() => setCheckRevision(value => value + 1)}
+                  >
+                    <Text>Check again</Text>
+                  </Button>
+                  {readiness && readiness.integration !== 'current' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy || checking}
+                      accessibilityLabel="Repair chat integration"
+                      onPress={async () => {
+                        if (busyRef.current) return;
+                        busyRef.current = true;
+                        setBusy(true);
+                        setError(null);
+                        try {
+                          await native.installAgentIntegration(provider);
+                          setCheckRevision(value => value + 1);
+                        } catch (reason) {
+                          setError(String(reason));
+                        } finally {
+                          busyRef.current = false;
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <Text>Repair integration</Text>
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onPress={() => {
+                      if (session) {
+                        setCreating(false);
+                        sessions.openSshShell(session.id);
+                      }
+                    }}
+                  >
+                    <Text>Server terminal</Text>
+                  </Button>
+                </View>
+              </Field>
+            ) : null}
             <Field label="Provider">
               <View className="flex-row gap-2">
                 {(['codex', 'claude'] as const).map(item => (
@@ -496,6 +879,21 @@ export function ChatsScreen({
                 placeholder="What are you working on?"
               />
             </Field>
+            {library ? (
+              <Button
+                accessibilityLabel="Save favorite project"
+                variant="outline"
+                disabled={!host || busy || !library.loaded}
+                onPress={saveFavorite}
+              >
+                <Star size={18} color={colors.text} />
+                <Text>
+                  {favoriteSaved
+                    ? 'Favorite saved'
+                    : 'Save as favorite project'}
+                </Text>
+              </Button>
+            ) : null}
             {error ? (
               <Text
                 accessibilityRole="alert"

@@ -53,6 +53,13 @@ describe('useAppNavigation', () => {
     expect(navigation?.state.tab).toBe('chats');
   });
 
+  test('a chat notification selects chat mode regardless of the previously open tab', () => {
+    act(() => { renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} />); });
+    act(() => { navigation?.selectTab('more'); navigation?.showChat(); });
+    expect(navigation?.state.tab).toBe('terminal');
+    expect(navigation?.state.lastNonTerminalTab).toBe('chats');
+  });
+
   test('notifies once after the first tab mounts when performance tracing is disabled', () => {
     const onFirstTabMounted = jest.fn();
 

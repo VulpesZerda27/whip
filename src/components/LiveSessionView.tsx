@@ -18,6 +18,8 @@ import type { PaneInfo } from '../types';
 import { SessionScreen } from './SessionScreen';
 
 interface Props {
+  draftSaveError?: string | null;
+  onToggleReadAloud?: () => void;
   preferChat?: boolean;
   composerDraftRequest?: ComposerDraftRequest;
   onComposerDraftConsumed?: (id: number) => void;
@@ -69,6 +71,8 @@ interface Props {
 
 /** Adapts one application-level live host into SessionScreen's local contract. */
 export function LiveSessionView({
+  draftSaveError,
+  onToggleReadAloud,
   preferChat,
   composerDraftRequest,
   onComposerDraftConsumed,
@@ -133,6 +137,8 @@ export function LiveSessionView({
 
   return (
     <SessionScreen
+      draftSaveError={draftSaveError}
+      onToggleReadAloud={onToggleReadAloud}
       preferChat={preferChat}
       composerDraftRequest={composerDraftRequest}
       onComposerDraftConsumed={onComposerDraftConsumed}

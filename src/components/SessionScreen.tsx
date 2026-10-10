@@ -139,9 +139,13 @@ import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { TerminalBackground, TerminalScreen } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
+import { AgentInteractionControls } from './AgentInteractionControls';
+import { ChatSessionActions } from './ChatSessionActions';
 import { useAppGlassEnabled } from './GlassSurface';
 
 interface Props {
+  draftSaveError?: string | null;
+  onToggleReadAloud?: () => void;
   preferChat?: boolean;
   hostId: string;
   hostSessionId: string;
@@ -197,6 +201,8 @@ interface BrowserWebViewHandle {
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
 
 export function SessionScreen({
+  draftSaveError,
+  onToggleReadAloud,
   preferChat = false,
   hostId,
   hostSessionId,
@@ -1687,6 +1693,21 @@ export function SessionScreen({
       >
         <View pointerEvents="box-none" className="absolute inset-0">
           <TerminalScreen
+            chatHeader={preferChat && chatVisible ? (
+              <ChatSessionActions
+                key={activeTarget?.key || activePane?.pane_id}
+                status={activePane?.agent_status || 'unknown'}
+                online={Boolean(client && activeTarget?.session.status === 'connected')}
+                readAloud={ttsEnabled}
+                onToggleReadAloud={onToggleReadAloud}
+                draftSaveError={draftSaveError}
+                onReconnect={onRefresh}
+                onStop={async () => {
+                  if (!client || !activePane) throw new Error('Reconnect before stopping this agent.');
+                  await client.native.requestHerdrApi({ method: 'pane.send_keys', params: { pane_id: activePane.pane_id, keys: ['esc'] } });
+                }}
+              />
+            ) : undefined}
             simpleChat={preferChat && chatVisible}
             onResidencyEnd={onTerminalResidencyEnd}
             activeTarget={activeTarget}
@@ -1795,6 +1816,13 @@ export function SessionScreen({
                                 }
                               >
                                 <AgentChatView
+                                  interactionControls={chatClient && activePane && selected ? (
+                                    <AgentInteractionControls
+                                      target={{ native: chatClient.native, terminalId, bindingToken: chatView.binding.bindingToken }}
+                                      enabled={visible && shown && activePane.agent_status === 'blocked' && activeTarget?.session.status === 'connected'}
+                                      onOpenTerminal={closeActiveChat}
+                                    />
+                                  ) : undefined}
                                   key={[
                                     chatView.binding.bindingToken,
                                     chatView.presentation.generation,

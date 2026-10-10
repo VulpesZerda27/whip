@@ -80,6 +80,7 @@ import { ChatPromptImage } from './ChatPromptImage';
 import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
+  interactionControls?: React.ReactNode;
   imageClient?: RemoteFileClient;
   state: AgentChatState;
   /** Selected and requested, including preparation before the viewport is revealed. */
@@ -800,6 +801,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
 });
 
 export function AgentChatView({
+  interactionControls,
   imageClient,
   state,
   active = true,
@@ -1493,6 +1495,7 @@ export function AgentChatView({
           }
           ListFooterComponent={
             <>
+              {interactionControls}
               <ChatBoundarySpacer height={contentPadding.bottom} />
             </>
           }

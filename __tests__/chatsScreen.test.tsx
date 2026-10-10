@@ -1,5 +1,7 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { ChatsScreen } from '../src/components/ChatsScreen';
+import { checkChatReadiness } from '../src/services/chatReadiness';
+import { emptyChatLibrary } from '../src/services/chatLibrary';
 import type { SessionRuntimeController } from '../src/hooks/useSessionRuntimeManager';
 import type { HostProfile } from '../src/types';
 import {
@@ -36,6 +38,10 @@ jest.mock('../src/components/app-ui', () => ({ StatusBadge: 'StatusBadge' }));
 jest.mock('../src/services/backgroundOperations', () => ({
   reportBackgroundFailure: (promise: Promise<void>) => promise,
 }));
+jest.mock('../src/services/chatReadiness', () => ({
+  checkChatReadiness: jest.fn(async () => ({ cli: 'ready', version: 'CLI', integration: 'current' })),
+  readinessIssues: jest.fn(() => []),
+}));
 jest.mock('../src/services/chatLaunchPreferences', () => ({
   defaultChatLaunchPreferences: {
     provider: 'codex',
@@ -62,7 +68,9 @@ const hosts = ['First', 'Second'].map(
     ({ id: `host-${index}`, name, host: 'example.test' }) as HostProfile,
 );
 function setup() {
+  const native = {};
   const sessions = {
+    getClient: jest.fn(() => ({ native })),
     presentationSessions: hosts.map(host => ({
       id: `session-${host.id}`,
       hostId: host.id,
@@ -95,7 +103,37 @@ const input = (label: string) =>
       String(node.type) === 'Input' && node.props.accessibilityLabel === label,
   );
 
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(checkChatReadiness).mockResolvedValue({ cli: 'ready', version: 'CLI', integration: 'current' });
+});
+
+test('readiness failures do not create a workspace or launch an agent', async () => {
+  const { sessions, onShowChats } = setup();
+  jest.mocked(checkChatReadiness).mockResolvedValue({ cli: 'login-required', version: 'CLI', integration: 'current' });
+  await act(async () => {
+    renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} />);
+  });
+  act(() => { button('New agent').props.onPress(); });
+  await act(async () => { await button('Start conversation').props.onPress(); });
+  expect(sessions.launchTab).not.toHaveBeenCalled();
+  expect(sessions.createWorkspace).not.toHaveBeenCalled();
+});
+
+test('a favorite loads its exact server, provider, model, effort and directory', async () => {
+  const { sessions, onShowChats } = setup();
+  const favorite = { id: 'favorite', label: 'Website', hostId: hosts[1].id, directory: '/srv/website', workspaceId: '', provider: 'claude' as const, model: 'sonnet', effort: 'high' as const };
+  const library = { value: { ...emptyChatLibrary, favorites: [favorite] }, loaded: true, error: null, update: jest.fn() };
+  await act(async () => {
+    renderer = create(<ChatsScreen library={library} hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} />);
+  });
+  await act(async () => { button('Start favorite Website').props.onPress(); });
+  expect(input('Model').props.value).toBe('sonnet');
+  expect(input('New project directory').props.value).toBe('/srv/website');
+  await act(async () => { await button('Start conversation').props.onPress(); });
+  expect(sessions.createWorkspace).toHaveBeenCalledWith('session-host-1', 'Website', '/srv/website');
+  expect(sessions.launchTab).toHaveBeenCalledWith('session-host-1', 'new-workspace', 'Website', expect.objectContaining({ kind: 'claude', args: expect.arrayContaining(['--effort', 'high']) }));
+});
 afterEach(() => act(() => renderer?.unmount()));
 
 test('launch targets the selected server and workspace with that provider’s options', async () => {

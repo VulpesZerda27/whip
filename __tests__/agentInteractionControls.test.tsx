@@ -5,11 +5,20 @@ import {
 } from '../src/components/AgentInteractionControls';
 import type { NativeAgentInteractionPrompt } from 'react-native-whip-ssh';
 import { NativeAgentInteractionKind } from 'react-native-whip-ssh/src/agentInteraction';
+import { AppState } from 'react-native';
 
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
+const mockAppStateListeners = new Set<(state: string) => void>();
 jest.mock('react-native', () => ({
+  AppState: {
+    currentState: 'active',
+    addEventListener: jest.fn((_event, listener) => {
+      mockAppStateListeners.add(listener);
+      return { remove: () => mockAppStateListeners.delete(listener) };
+    }),
+  },
   ActivityIndicator: 'ActivityIndicator',
   ScrollView: 'ScrollView',
   View: 'View',
@@ -52,11 +61,13 @@ let renderer: ReactTestRenderer;
 
 beforeEach(() => {
   jest.useFakeTimers();
+  AppState.currentState = 'active';
   readPrompt.mockReset().mockResolvedValue(PROMPT);
   respond.mockReset().mockResolvedValue(undefined);
 });
 afterEach(() => {
   if (renderer) act(() => renderer.unmount());
+  mockAppStateListeners.clear();
   jest.useRealTimers();
 });
 
@@ -74,6 +85,24 @@ function button(label: string) {
       node.props.accessibilityLabel === label,
   );
 }
+
+test('locking the phone pauses prompt polling and returning refreshes the live question', async () => {
+  await mount();
+  expect(readPrompt).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    for (const listener of mockAppStateListeners) listener('background');
+  });
+  expect(renderer.toJSON()).toBeNull();
+  await act(async () => {
+    jest.advanceTimersByTime(10000);
+  });
+  expect(readPrompt).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    for (const listener of mockAppStateListeners) listener('active');
+  });
+  expect(readPrompt).toHaveBeenCalledTimes(2);
+  expect(button('Confirm agent selection')).toBeDefined();
+});
 
 test('shows the live approval labels and selects before explicit confirmation', async () => {
   await mount();
@@ -106,6 +135,36 @@ test('shows the live approval labels and selects before explicit confirmation', 
     await button('Confirm agent selection').props.onPress();
   });
   expect(respond).toHaveBeenCalledTimes(2);
+});
+
+test('returning from lock preserves answer text and does not resend an unacknowledged approval', async () => {
+  await mount();
+  await act(async () => {
+    button('Toggle terminal controls').props.onPress();
+  });
+  act(() => {
+    renderer.root
+      .findByType('Input' as never)
+      .props.onChangeText('Keep this answer');
+  });
+  respond.mockImplementation(() => new Promise(() => {}));
+  await act(async () => {
+    button('Confirm agent selection').props.onPress();
+  });
+  await act(async () => {
+    for (const listener of mockAppStateListeners) listener('background');
+  });
+  await act(async () => {
+    for (const listener of mockAppStateListeners) listener('active');
+  });
+  expect(renderer.root.findByType('Input' as never).props.value).toBe(
+    'Keep this answer',
+  );
+  expect(button('Confirm agent selection').props.disabled).toBe(true);
+  await act(async () => {
+    button('Confirm agent selection').props.onPress();
+  });
+  expect(respond).toHaveBeenCalledTimes(1);
 });
 
 test('queued questions show one opening action without exposing the terminal screen', async () => {

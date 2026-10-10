@@ -158,6 +158,7 @@ import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 
 interface Props {
+  chatHeader?: React.ReactNode;
   simpleChat?: boolean;
   onResidencyEnd?: TerminalResidencyEnd;
   activeTarget: TerminalRenderTarget | null;
@@ -439,6 +440,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       chatControl,
       chatViewEnabled,
       simpleChat = false,
+      chatHeader,
       renderViewportOverlay,
       viewportOverlayBackground,
       onOpenLink,
@@ -1348,7 +1350,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     }, [composeOpen, keyboardEnabled, keyboardInset, keyboardVisible, terminalId, terminalTranslateY, visible]);
 
     useEffect(() => {
-      if (!composeOpen || composeExpanded || !keyboardEnabled) return;
+      if (!composeOpen || composeExpanded || !keyboardEnabled || simpleChat) return;
       const timer = setTimeout(
         () => {
           composeInputRef.current?.focus();
@@ -1358,7 +1360,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           : COMPOSER_FOCUS_DEFER_MS,
       );
       return () => clearTimeout(timer);
-    }, [composeExpanded, composeOpen, keyboardEnabled]);
+    }, [composeExpanded, composeOpen, keyboardEnabled, simpleChat]);
 
     useEffect(() => {
       setSearchOpen(false);
@@ -2414,6 +2416,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   );
                 }}
               >
+                {chatHeader}
                 <MessageComposer
                   {...composerInputProps}
                   glass={appGlassEnabled}

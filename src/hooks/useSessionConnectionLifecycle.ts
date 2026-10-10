@@ -649,7 +649,8 @@ export function useSessionConnectionLifecycle({
   );
 
   const connectSavedHost = useCallback(
-    async (host: HostProfile) => {
+    async (host: HostProfile, options?: { navigate?: boolean }) => {
+      const navigate = options?.navigate !== false;
       const existing = getState().sessions.find(
         session => session.hostId === host.id,
       );
@@ -661,6 +662,11 @@ export function useSessionConnectionLifecycle({
         connectionAttemptsRef.current.has(host.id),
       );
       if (existing && action === 'select') {
+        if (!navigate) {
+          if (existing.connectionStatus !== 'ready') await existingRuntime?.client.reconnectControl();
+          await refresh(existing.id);
+          return;
+        }
         select(existing.id, existing.connectionStatus === 'ready' ? 'terminal' : 'herd');
         refresh(existing.id).catch(error =>
           scheduleReconnect(existing.id, error),
@@ -668,15 +674,15 @@ export function useSessionConnectionLifecycle({
         return;
       }
       if (existing && action === 'wait') {
-        select(existing.id, 'herd');
+        if (navigate) select(existing.id, 'herd');
         return;
       }
       if (existing) {
-        select(existing.id, 'herd');
+        if (navigate) select(existing.id, 'herd');
       } else {
         sessionProfilesRef.current.set(host.id, host);
         commitAppCore(appCore.openSession(host.id, host.id, true));
-        navigation.showHerd(host.id);
+        if (navigate) navigation.showHerd(host.id);
       }
       hosts.setError(null);
       trackHostConnection(host.id, true);

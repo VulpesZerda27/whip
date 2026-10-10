@@ -23,6 +23,7 @@ import {
 } from '../services/devicePreferences';
 import { recordNetworkDiagnostic } from '../services/networkDiagnostics';
 import type { HerdrSnapshot, PaneInfo } from '../types';
+import { isChatProvider } from '../lib/chatLaunch';
 
 interface AgentStateChange {
   sessionId: string;
@@ -109,6 +110,8 @@ export function useAgentNotificationNavigation({
   getState,
   hosts,
   openPaneTerminal,
+  openChat,
+  revision,
 }: {
   notifications: ReturnType<typeof useAgentNotifications>;
   restoreComplete: boolean;
@@ -119,6 +122,8 @@ export function useAgentNotificationNavigation({
     pane: PaneInfo,
     focusAgent?: boolean,
   ) => void;
+  openChat?: () => void;
+  revision?: unknown;
 }): void {
   const openNotificationTarget = useEffectEvent(() => {
     if (!notifications.response) return false;
@@ -134,6 +139,7 @@ export function useAgentNotificationNavigation({
     hosts.closeEditor();
     hosts.setError(null);
     openPaneTerminal(resolved.sessionId, resolved.pane, true);
+    if (isChatProvider(resolved.pane.agent)) openChat?.();
     notifications.consume(target.notificationId);
     return true;
   });
@@ -141,5 +147,5 @@ export function useAgentNotificationNavigation({
   useEffect(() => {
     if (!restoreComplete || !notifications.response) return;
     openNotificationTarget();
-  }, [notifications.response, restoreComplete]);
+  }, [notifications.response, restoreComplete, revision]);
 }
