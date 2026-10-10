@@ -163,6 +163,13 @@ The signing key is private and is never included in the APK or repository.
 
 ## Validation
 
+Version 1.8.9 passes all 202 Jest suites (2,292 tests), TypeScript, changed-file
+ESLint, the app-version check and the signed ARM64 release build. An Android
+instrumentation test opens a 12,000 × 512 PNG containing one-pixel stripes,
+checks that Fit uses reduced overview tiles, then verifies the rendered pixels
+exactly at 1:1 and returns to Fit. It also checks original dimensions and a
+1,024-pixel bound on decoded tile edges. The release installs over 1.8.8.
+
 Version 1.8.8 passes all 201 Jest suites (2,289 tests), TypeScript, full ESLint,
 the app-version check, and the iOS JavaScript bundle build. Regression tests cover
 Chat without a terminal attachment, messages and attachments, raw keys with

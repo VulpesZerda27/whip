@@ -35,6 +35,9 @@ jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
+jest.mock('../src/components/FullResolutionImagePreview', () => ({
+  FullResolutionImagePreview: 'FullResolutionImagePreview', supportsFullResolutionPreview: () => false,
+}));
 jest.mock('react-native', () => ({
   View: 'View',
   ScrollView: 'ScrollView',
