@@ -1,6 +1,12 @@
 import type { AgentInfo } from '../types';
 import type { ChatActivity } from '../services/chatLibrary';
 
+export function chatStatusPriority(status: string): number {
+  if (status === 'blocked') return 0;
+  if (status === 'working' || status === 'busy' || status === 'running') return 1;
+  return 2;
+}
+
 export function chatFingerprint(agent: AgentInfo): string {
   return JSON.stringify([
     agent.agent,

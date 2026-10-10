@@ -1,26 +1,35 @@
 import { useRef, useState } from 'react';
-import { View } from 'react-native';
+import { Alert, View } from 'react-native';
+import { Ellipsis } from 'lucide-react-native';
+import { useTheme } from '../theme';
 import { chatStatusLabel } from '../lib/chatInbox';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 export function ChatSessionActions({
+  title,
+  subtitle,
   status,
   online,
   readAloud,
   onToggleReadAloud,
   onStop,
   onReconnect,
+  onOpenTerminal,
   draftSaveError,
 }: {
+  title: string;
+  subtitle: string;
   status: string;
   online: boolean;
   readAloud: boolean;
   onToggleReadAloud?: () => void;
   onStop: () => Promise<void>;
   onReconnect: () => Promise<void>;
+  onOpenTerminal: () => void;
   draftSaveError?: string | null;
 }) {
+  const { colors } = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sending = useRef(false);
@@ -39,17 +48,18 @@ export function ChatSessionActions({
     }
   };
   return (
-    <View className="mb-2 gap-1 rounded-2xl bg-background px-3 py-2">
-      <View className="flex-row flex-wrap items-center gap-2">
-        <Text
-          accessibilityLiveRegion="polite"
-          className="mr-auto text-sm font-semibold"
-        >
-          {chatStatusLabel(status, online)}
-        </Text>
+    <View className="border-b border-border bg-background px-3 py-1">
+      <View className="min-h-12 flex-row items-center gap-2">
+        <View className="min-w-0 flex-1">
+          <Text className="text-[14px] font-semibold leading-5" numberOfLines={1}>{title}</Text>
+          <Text accessibilityLiveRegion="polite" className="text-[11px] leading-4 text-muted-foreground" numberOfLines={1}>
+            {chatStatusLabel(status, online)} · {subtitle}
+          </Text>
+        </View>
         {online && status === 'working' ? (
           <Button
             size="sm"
+            className="min-h-11"
             variant="outline"
             accessibilityLabel="Stop agent response"
             disabled={busy}
@@ -63,6 +73,7 @@ export function ChatSessionActions({
         {!online ? (
           <Button
             size="sm"
+            className="min-h-11"
             variant="outline"
             accessibilityLabel="Reconnect chat"
             disabled={busy}
@@ -73,29 +84,19 @@ export function ChatSessionActions({
             <Text>{busy ? 'Reconnecting…' : 'Reconnect'}</Text>
           </Button>
         ) : null}
-        {onToggleReadAloud ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            accessibilityLabel="Read responses aloud"
-            accessibilityRole="switch"
-            accessibilityState={{ checked: readAloud }}
-            onPress={onToggleReadAloud}
-          >
-            <Text>Read aloud: {readAloud ? 'On' : 'Off'}</Text>
-          </Button>
-        ) : null}
+        <Button
+          className="size-11 rounded-full px-0"
+          variant="ghost"
+          accessibilityLabel="Conversation options"
+          onPress={() => Alert.alert('Conversation', undefined, [
+            ...(onToggleReadAloud ? [{ text: `Read aloud: ${readAloud ? 'On' : 'Off'}`, onPress: onToggleReadAloud }] : []),
+            { text: 'Open terminal', onPress: onOpenTerminal },
+            { text: 'Cancel', style: 'cancel' },
+          ])}
+        >
+          <Ellipsis size={21} color={colors.text} />
+        </Button>
       </View>
-      {!online ? (
-        <Text className="text-xs text-muted-foreground">
-          Your agent keeps running. Your draft stays here until you reconnect.
-        </Text>
-      ) : null}
-      {status === 'blocked' && online ? (
-        <Text className="text-xs text-muted-foreground">
-          Answer the question or approval below the latest response.
-        </Text>
-      ) : null}
       {error || draftSaveError ? (
         <Text accessibilityRole="alert" className="text-xs text-destructive">
           {error || draftSaveError}

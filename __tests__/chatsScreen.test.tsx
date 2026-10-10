@@ -42,6 +42,15 @@ jest.mock('../src/services/chatReadiness', () => ({
   checkChatReadiness: jest.fn(async () => ({ cli: 'ready', version: 'CLI', integration: 'current' })),
   readinessIssues: jest.fn(() => []),
 }));
+jest.mock('../src/services/chatCatalog', () => ({
+  fetchChatCatalog: jest.fn(async () => [{ id: 'sonnet', label: 'Sonnet from server', efforts: ['default', 'high'] }]),
+}));
+jest.mock('../src/services/chatDirectories', () => ({
+  fetchChatDirectories: jest.fn(async () => [
+    { label: '~', path: '/home/test' }, { label: '~/Projects', path: '/home/test/Projects' },
+    { label: 'mobile', path: '/home/test/Projects/mobile' },
+  ]),
+}));
 jest.mock('../src/services/chatLaunchPreferences', () => ({
   defaultChatLaunchPreferences: {
     provider: 'codex',
@@ -150,7 +159,7 @@ test('launch targets the selected server and workspace with that provider’s op
   });
   act(() => { button('New agent').props.onPress(); });
   act(() => { button('Second').props.onPress(); });
-  act(() => { button('Claude').props.onPress(); });
+  await act(async () => { button('Claude').props.onPress(); });
   act(() => { input('Model').props.onChangeText('sonnet'); });
   act(() => { button('high').props.onPress(); });
   await act(async () => {
@@ -253,4 +262,28 @@ test('a failed launch reuses a newly created workspace on retry', async () => {
     '',
     expect.anything(),
   );
+});
+
+test('a fetched project folder launches an absolute path on the selected server', async () => {
+  const { sessions, onShowChats } = setup();
+  await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
+  await act(async () => { button('New agent').props.onPress(); });
+  await act(async () => { button('mobile').props.onPress(); });
+  expect(input('New project directory').props.value).toBe('/home/test/Projects/mobile');
+  await act(async () => { await button('Start conversation').props.onPress(); });
+  expect(sessions.createWorkspace).toHaveBeenCalledWith('session-host-0', 'mobile', '/home/test/Projects/mobile');
+});
+
+test('blocked chats lead working chats, which lead even unread finished chats', async () => {
+  const { sessions, onShowChats } = setup();
+  Object.assign(sessions.presentationSessions[0].snapshot, {
+    agents: ['idle', 'done', 'working', 'blocked'].map((status, i) => ({
+      agent: 'claude', agent_status: status, pane_id: `p${i}`, tab_id: status,
+      workspace_id: 'workspace-host-0', terminal_id: `term${i}`, state_change_seq: i,
+    })),
+    tabs: ['idle', 'done', 'working', 'blocked'].map(status => ({ tab_id: status, label: status })),
+  });
+  await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
+  const chats = renderer.root.findAll(node => String(node.type) === 'Button' && String(node.props.accessibilityLabel).startsWith('Open chat '));
+  expect(chats.map(chat => chat.find(node => String(node.type) === 'StatusBadge').props.status)).toEqual(['blocked', 'working', 'done', 'idle']);
 });

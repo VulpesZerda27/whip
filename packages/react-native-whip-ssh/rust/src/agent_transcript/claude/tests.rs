@@ -327,6 +327,37 @@ fn last_prompt_can_select_a_known_branch_but_unknown_leaf_is_ignored() {
 }
 
 #[test]
+fn stale_last_prompt_does_not_hide_a_later_branch_final_reply() {
+    let prefix = [
+        line(user("u", None, json!("Please check"))),
+        line(assistant("old", "u", json!("Earlier branch"))),
+        line(json!({"type":"last-prompt","sessionId":SESSION,"leafUuid":"old"})),
+    ]
+    .concat();
+    let suffix = [
+        line(assistant("new", "u", json!("New branch"))),
+        line(assistant("final", "new", json!("The complete final reply"))),
+    ]
+    .concat();
+    let mut core = parse(&prefix);
+    let blob = core.cache_blob().unwrap();
+    core.ingest(core.source_generation(), &suffix).unwrap();
+    assert_eq!(ids(&core.state()), ["u", "new", "final"]);
+    let whole = parse(&[prefix.clone(), suffix.clone()].concat());
+    assert_eq!(whole.state().messages, core.state().messages);
+
+    let mut restored = ClaudeSessionCore::new(SESSION);
+    restored.restore_cache(&blob).unwrap();
+    let binding = restored.bind_source(
+        "/transcript".into(),
+        "1:2".into(),
+        (prefix.len() + suffix.len()) as u64,
+    );
+    restored.ingest(binding.source_generation, &suffix).unwrap();
+    assert_eq!(restored.state().messages, core.state().messages);
+}
+
+#[test]
 fn mismatched_session_and_sidechain_title_cannot_poison_main_state() {
     let mut wrong = user("wrong", None, json!("wrong"));
     wrong["sessionId"] = json!("another-session");

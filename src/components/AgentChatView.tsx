@@ -80,6 +80,7 @@ import { ChatPromptImage } from './ChatPromptImage';
 import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
+  simpleChat?: boolean;
   interactionControls?: React.ReactNode;
   imageClient?: RemoteFileClient;
   state: AgentChatState;
@@ -679,11 +680,12 @@ function formatDuration(start: number | undefined, end: number | undefined): str
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function UserPrompt({ message, imageClient, directory, active }: {
+function UserPrompt({ message, imageClient, directory, active, simpleChat }: {
   message: TranscriptMessage;
   imageClient?: RemoteFileClient;
   directory?: string;
   active: boolean;
+  simpleChat: boolean;
 }) {
   const { colors } = useTheme();
   const { copied, copyText } = useCopyFeedback();
@@ -693,18 +695,18 @@ function UserPrompt({ message, imageClient, directory, active }: {
   if (!text) return null;
   const meta = formatTime(message.createdAt);
   return (
-    <View className="ml-9 items-end">
-      <Pressable accessibilityLabel="Copy prompt" className="min-h-11 max-w-[86%] gap-2 rounded-xl bg-purple-950 px-3 py-2.5" onLongPress={copyPrompt}>
+    <View className={simpleChat ? 'ml-5 items-end' : 'ml-9 items-end'}>
+      <Pressable accessibilityLabel="Copy prompt" className={cn('min-h-11 gap-2 rounded-xl bg-purple-950 px-3 py-2.5', simpleChat ? 'max-w-[94%]' : 'max-w-[86%]')} onLongPress={copyPrompt}>
         {parts.map(part => part.type === 'image'
           ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
           : part.type === 'text' && part.text.trim()
             ? <Text key={part.id} selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={part.text} /></Text>
             : null)}
       </Pressable>
-      <View className="mt-1 flex-row items-center gap-1 px-1">
+      {!simpleChat && <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
         <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={copyPrompt}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
-      </View>
+      </View>}
     </View>
   );
 }
@@ -763,10 +765,11 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
 }
 
 const TranscriptBlockView = memo(function TranscriptBlockRow({
-  block, active, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory,
+  block, active, simpleChat, expanded, searchSelected, searchQuery, onToggle, onLinkPress, imageClient, directory,
 }: {
   block: ChatBlock;
   active: boolean;
+  simpleChat: boolean;
   expanded: boolean;
   searchSelected?: boolean;
   searchQuery: string;
@@ -779,20 +782,24 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   const toggle = () => onToggle(block.id);
   const content = () => {
     switch (block.type) {
-      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} />;
+      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} simpleChat={simpleChat} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
-      case 'meta': return <TurnMeta turn={block.turn} />;
+      case 'meta': return simpleChat
+        ? block.turn.status === 'interrupted'
+          ? <Text className="text-xs text-muted-foreground">Interrupted</Text>
+          : null
+        : <TurnMeta turn={block.turn} />;
     }
   };
   return (
     <View className={cn(
       'w-full',
-      block.spacing === 'turn' && 'mt-7',
-      block.spacing === 'part' && 'mt-3',
+      block.spacing === 'turn' && (simpleChat ? 'mt-4' : 'mt-7'),
+      block.spacing === 'part' && (simpleChat ? 'mt-2' : 'mt-3'),
       searchSelected && 'rounded-md bg-primary/10',
     )} style={block.type === 'meta' ? { minHeight: 1 } : undefined}>
       <ChatSearchQuery.Provider value={searchQuery}>{content()}</ChatSearchQuery.Provider>
@@ -801,6 +808,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
 });
 
 export function AgentChatView({
+  simpleChat = false,
   interactionControls,
   imageClient,
   state,
@@ -968,8 +976,8 @@ export function AgentChatView({
 
   useLayoutEffect(() => () => saveViewport(), [saveViewport]);
   const contentPadding = insetContentPadding(contentInsets, {
-    top: CHAT_CONTENT_TOP_GAP + searchBarHeight,
-    bottom: CHAT_CONTENT_BOTTOM_GAP,
+    top: (simpleChat ? 8 : CHAT_CONTENT_TOP_GAP) + searchBarHeight,
+    bottom: simpleChat ? 8 : CHAT_CONTENT_BOTTOM_GAP,
   });
   const maxOffset = Math.max(0, scrollGeometry.contentHeight - scrollGeometry.viewportHeight);
   const scrollThumb = scrollThumbGeometry(
@@ -1447,6 +1455,7 @@ export function AgentChatView({
               key={item.id}
               block={item}
               active={active}
+              simpleChat={simpleChat}
               expanded={expandedBlocks.has(item.id)}
               searchSelected={search.match?.documentId === item.id}
               searchQuery={searchOpen && search.ready ? search.query.trim() : ''}
@@ -1508,7 +1517,7 @@ export function AgentChatView({
                   No conversation yet
                 </Text>
                 <Text className="mt-1 max-w-[280px] text-center text-[12px] leading-[18px] text-muted-foreground">
-                  Open the composer from the controls below to send a message.
+                  {simpleChat ? 'Send a message to get started.' : 'Open the composer from the controls below to send a message.'}
                 </Text>
               </View>
             ) : null

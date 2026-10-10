@@ -1414,7 +1414,7 @@ export function SessionScreen({
       )}
     >
       <TerminalBackground preferences={terminalPreferences} />
-      <View
+      {!(preferChat && chatVisible) && <View
         className="absolute inset-x-0 z-30"
         style={{ bottom: terminalSessionChrome.bottom }}
       >
@@ -1442,12 +1442,7 @@ export function SessionScreen({
               color={colors.text}
             />
           </Button>
-          {preferChat && chatVisible ? (
-            <View className="min-w-0 flex-1 justify-center px-3">
-              <Text className="text-base font-semibold" numberOfLines={1}>{selectedTab?.label || 'Conversation'}</Text>
-              <Text className="text-xs text-muted-foreground" numberOfLines={1}>{preferredAgent ? chatAgentDisplayName(preferredAgent) : ''} · {workspace?.label || 'Workspace'}</Text>
-            </View>
-          ) : workspace ? (
+          {workspace ? (
             <>
               <ScrollView
                 className="min-w-0 flex-1"
@@ -1685,7 +1680,26 @@ export function SessionScreen({
             </ScrollView>
           </View>
         )}
-      </View>
+      </View>}
+
+      {preferChat && chatVisible ? (
+        <ChatSessionActions
+          title={selectedTab?.label || 'Conversation'}
+          subtitle={`${preferredAgent ? chatAgentDisplayName(preferredAgent) : ''} · ${workspace?.label || 'Workspace'}`}
+          onOpenTerminal={closeActiveChat}
+          key={activeTarget?.key || activePane?.pane_id}
+          status={activePane?.agent_status || 'unknown'}
+          online={Boolean(client && activeTarget?.session.status === 'connected')}
+          readAloud={ttsEnabled}
+          onToggleReadAloud={onToggleReadAloud}
+          draftSaveError={draftSaveError}
+          onReconnect={onRefresh}
+          onStop={async () => {
+            if (!client || !activePane) throw new Error('Reconnect before stopping this agent.');
+            await client.native.requestHerdrApi({ method: 'pane.send_keys', params: { pane_id: activePane.pane_id, keys: ['esc'] } });
+          }}
+        />
+      ) : null}
 
       <View
         className="relative flex-1 overflow-hidden bg-transparent"
@@ -1693,21 +1707,6 @@ export function SessionScreen({
       >
         <View pointerEvents="box-none" className="absolute inset-0">
           <TerminalScreen
-            chatHeader={preferChat && chatVisible ? (
-              <ChatSessionActions
-                key={activeTarget?.key || activePane?.pane_id}
-                status={activePane?.agent_status || 'unknown'}
-                online={Boolean(client && activeTarget?.session.status === 'connected')}
-                readAloud={ttsEnabled}
-                onToggleReadAloud={onToggleReadAloud}
-                draftSaveError={draftSaveError}
-                onReconnect={onRefresh}
-                onStop={async () => {
-                  if (!client || !activePane) throw new Error('Reconnect before stopping this agent.');
-                  await client.native.requestHerdrApi({ method: 'pane.send_keys', params: { pane_id: activePane.pane_id, keys: ['esc'] } });
-                }}
-              />
-            ) : undefined}
             simpleChat={preferChat && chatVisible}
             onResidencyEnd={onTerminalResidencyEnd}
             activeTarget={activeTarget}
@@ -1770,6 +1769,7 @@ export function SessionScreen({
                     <View className="absolute inset-0 bg-background">
                       {activeSavedChat ? (
                         <AgentChatView
+                          simpleChat={preferChat}
                           state={activeSavedChat.state}
                           imageClient={client ?? undefined}
                           agent={activeSavedChat.agent}
@@ -1816,6 +1816,7 @@ export function SessionScreen({
                                 }
                               >
                                 <AgentChatView
+                                  simpleChat={preferChat}
                                   interactionControls={chatClient && activePane && selected ? (
                                     <AgentInteractionControls
                                       target={{ native: chatClient.native, terminalId, bindingToken: chatView.binding.bindingToken }}

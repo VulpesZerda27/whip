@@ -120,6 +120,7 @@ interface MessageComposerProps extends ComposerInputProps {
   };
   beforeInput?: ReactNode;
   className?: string;
+  compact?: boolean;
   glass?: boolean;
   inputClassName?: string;
   inputRef?: Ref<TextInputHandle>;
@@ -131,6 +132,7 @@ export function MessageComposer({
   actions,
   beforeInput,
   className,
+  compact = false,
   glass = false,
   inputClassName,
   inputRef,
@@ -139,6 +141,11 @@ export function MessageComposer({
 }: MessageComposerProps) {
   const { colors } = useTheme();
   const [recording, setRecording] = useState(false);
+  const [inputHeight, setInputHeight] = useState(44);
+  useEffect(() => { setInputHeight(44); }, [inputProps.pasteTargetKey]);
+  useEffect(() => {
+    if (!inputProps.initialValue) setInputHeight(44);
+  }, [inputProps.initialValue]);
   const recordingRef = useRef(false);
   const localInput = useRef<TextInputHandle | null>(null);
   const latestInput = useRef(inputProps);
@@ -180,6 +187,45 @@ export function MessageComposer({
     : undefined;
   const actionColor = glass ? colors.text : actions.actionColor;
   const sendColor = glass ? colors.primary : actions.sendColor;
+  if (compact) {
+    return (
+      <View className={cn('min-w-0 rounded-3xl border border-border bg-background p-1', className)}>
+        {beforeInput}
+        <View className="min-w-0 flex-row items-end">
+          <Button accessibilityLabel={actions.attachLabel} className="size-11 rounded-full px-0" variant="ghost" onPress={actions.onAttach}>
+            <Paperclip size={19} color={colors.text} />
+          </Button>
+          <ComposerInput
+            {...inputProps}
+            ref={bindInput}
+            numberOfLines={1}
+            placeholder="Message…"
+            placeholderTextColor={colors.textTertiary}
+            selectionColor={colors.primary}
+            className="min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 py-2.5 text-base leading-6 text-foreground shadow-none"
+            style={[inputProps.style, { height: inputHeight }]}
+            onContentSizeChange={event => {
+              setInputHeight(Math.max(44, Math.min(136, Math.ceil(event.nativeEvent.contentSize.height))));
+              inputProps.onContentSizeChange?.(event);
+            }}
+          />
+          {voiceDictationAvailable ? (
+            <Button accessibilityLabel={recording ? 'Recording voice message' : 'Record voice message'} disabled={recording} className="size-11 rounded-full px-0" variant="ghost" onPress={dictate}>
+              {recording ? <ActivityIndicator size="small" color={colors.text} /> : <Mic size={19} color={colors.text} />}
+            </Button>
+          ) : null}
+          <Button
+            accessibilityLabel={actions.sendLabel}
+            className="size-11 rounded-full bg-primary px-0"
+            disabled={actions.sendDisabled}
+            onPress={hapticSend(actions.onSend)}
+          >
+            {actions.sending ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Send size={19} color={colors.onPrimary} />}
+          </Button>
+        </View>
+      </View>
+    );
+  }
   const surfaceContent = (
     <>
       {beforeInput}

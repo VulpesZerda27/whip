@@ -11,16 +11,25 @@ the upstream Hosts, Herd, Terminal and More surfaces are still available.
 2. Open **Chats** and connect the servers you want to use. Chats merges existing
    Codex and Claude agents across those connections; the server chips filter it.
 3. Tap **+**. Choose the server, provider, model and effort. Choose an existing
-   Herdr workspace or enter an absolute project directory for a new workspace.
+   Herdr workspace or pick Home (`~`), `~/Projects`, or a project folder fetched
+   from that server. The Projects choices appear only when the folder exists.
+   You can search long project lists or enter an absolute directory manually.
 4. Save a favorite project to reuse that server, directory, provider, model and
    effort. Start the conversation after the server readiness check passes.
    Whip opens that agent's native transcript and a persistent composer.
 5. Tap the microphone, speak, and review the resulting text before sending.
 
 Model and effort defaults are remembered separately for each provider. Blank
-model and Default effort inherit the server's CLI settings. Suggested models
-are shortcuts, not an account availability check; you can type any supported
-model ID. Effort availability varies by model and CLI version.
+model and Default effort inherit the server's CLI settings. Model choices and
+per-model effort levels are fetched from the selected server's installed CLI:
+Codex uses `model/list`; Claude uses its initialization model catalog. Switching
+servers/providers refreshes the list and discards late results. Selecting a model
+resets effort to Default; a saved unsupported effort must be changed before launch.
+These are the CLI's reported choices, not an inference-based entitlement check.
+If discovery fails, Server default and manual model entry remain available.
+Discovery requires Python 3 on the server, sends no prompt, suppresses auth/account
+output, and stops its temporary CLI process after the bounded probe. Claude hooks
+and MCP servers are disabled during discovery.
 
 New Claude agents use `--permission-mode auto`. New Codex agents use
 `--ask-for-approval on-request --sandbox workspace-write -c approvals_reviewer='"auto_review"'`.
@@ -48,6 +57,9 @@ Unsent composer drafts are saved per server and terminal and restored after an
 app restart. Saving failures are shown in chat. This is draft persistence, not a
 durable send queue: pending sends are not replayed automatically after a restart.
 
+Chats sort blocked agents first, then working agents, then idle/finished agents.
+Unread completions and recent activity break ties within those groups.
+
 The **Needs you** filter combines blocked agents with unread completions, which
 also have a **New** badge. Opening a chat in the foreground marks its current
 activity seen; responses received while the phone is locked stay unread. Tapping
@@ -56,7 +68,10 @@ delivery uses the existing notification settings and Android permissions.
 
 Chat shows **Working**, **Needs you**, or **Offline** status, with **Stop** while
 working and **Reconnect** when offline. Stop sends Escape to the selected agent.
-The **Read aloud** switch changes the existing speech preference from inside chat.
+The header's **Conversation options** menu contains **Read aloud** and **Open terminal**.
+Simple chat has no back arrow or terminal shortcut bar; use the system back gesture.
+A single input row grows as you type, with attachment, voice and send controls.
+Prompt timestamps and response duration/copy footers are hidden; text remains selectable.
 
 Live questions and approval menus appear below the latest response. Choose an
 option, then confirm it. Controls are bound to the current terminal and prompt;
@@ -123,8 +138,9 @@ The signing key is private and is never included in the APK or repository.
 
 ## Validation
 
-The Android implementation passes all 198 Jest suites (2,237 tests), TypeScript,
-ESLint, Expo Doctor's 20 checks, and the repository's app-version check. The
+Version 1.8.5 passes all 200 Jest suites (2,246 tests), TypeScript, ESLint,
+597 Rust tests, strict Rust Clippy, and the repository's app-version check.
+The previous release also passed Expo Doctor's 20 checks. The
 signed ARM64 release builds successfully and its signature verifies. Regression
 tests cover reconnecting the exact saved conversation, ignoring stale navigation,
 unread activity while locked, prompt polling on foreground transitions, favorites,
@@ -132,16 +148,27 @@ draft restoration and write ordering, launch readiness, and live question contro
 Readiness tests execute the actual generated shell probe with test CLIs and verify
 that authentication output does not escape.
 
-The release APK was smoke-tested on an Android 16 emulator with ARM translation:
-the Chats home and both provider forms render and respond to navigation. A saved
-test server and its connection details survived updating from 1.8.3 to 1.8.4.
-A saved favorite and server also survived emulator network toggles, locking and
-unlocking, and a force-stop/relaunch. These checks used an offline test profile.
-Live conversations across Wi-Fi/cellular handoff and microphone recognition still
-need testing on a physical phone with the user's servers and speech service.
+Version 1.8.5 was installed over 1.8.4 on the Android 16 emulator with ARM
+translation; its server credentials and favorite survived. A live workstation
+Claude conversation verifies the compact chat layout, keyboard positioning,
+system back gesture and continued transcript updates. Model/effort discovery
+was exercised against the workstation's real Codex and Claude CLIs, plus fake
+CLIs that check protocol-only requests, pagination and secret suppression.
+Folder tests cover home, absent/inaccessible Projects, and sorted directories.
+
+A Claude transcript bug could let a stale `last-prompt` branch marker hide a
+later final reply until another prompt arrived. Branch stamps now expire when
+newer conversation records arrive; the cache version forces old projections to
+reload. Whole-file, incremental and cache-resume tests cover the fix, and the
+previously affected local transcript prefix now includes its complete final reply.
+Private transcript contents are not included in fixtures or commits.
+
+Microphone recognition and Wi-Fi/cellular handoff still need physical-phone testing.
 iOS native builds were not run on this Linux workstation; the dedicated dictation
 module targets Android.
 
 References: [Android app signing](https://developer.android.com/studio/publish/app-signing),
 [Codex sandbox and review](https://learn.chatgpt.com/docs/sandboxing),
-[Claude CLI](https://code.claude.com/docs/en/cli-reference).
+[Claude CLI](https://code.claude.com/docs/en/cli-reference),
+[Codex model discovery](https://learn.chatgpt.com/docs/app-server#list-models-model-list),
+[Claude initialization protocol](https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/_internal/query.py).

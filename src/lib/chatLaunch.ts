@@ -14,12 +14,6 @@ export const chatEfforts: Record<ChatProvider, readonly ChatEffort[]> = {
   claude: ['default', 'low', 'medium', 'high', 'xhigh', 'max'],
 };
 
-// Suggestions are editable: the remote CLI/account is authoritative for availability.
-export const chatModels: Record<ChatProvider, readonly string[]> = {
-  codex: ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna'],
-  claude: ['opus', 'sonnet', 'haiku'],
-};
-
 /** Arguments stay structured all the way to Rust's managed-agent launcher. */
 export function chatLaunchIntent(options: ChatLaunchOptions): TabLaunchIntent {
   const { provider, effort } = options;

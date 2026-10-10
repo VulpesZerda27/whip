@@ -158,7 +158,6 @@ import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 
 interface Props {
-  chatHeader?: React.ReactNode;
   simpleChat?: boolean;
   onResidencyEnd?: TerminalResidencyEnd;
   activeTarget: TerminalRenderTarget | null;
@@ -440,7 +439,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       chatControl,
       chatViewEnabled,
       simpleChat = false,
-      chatHeader,
       renderViewportOverlay,
       viewportOverlayBackground,
       onOpenLink,
@@ -579,10 +577,11 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composerKeyboardEnabled = composeOpen && keyboardEnabled;
     const keyboardControlDisabled = status !== 'connected' && !composeOpen;
     const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
-    const sessionChromeVisible = shouldShowTerminalSessionChrome({
+    const effectiveControlBarHeight = simpleChat ? (keyboardInset > 0 ? 0 : bottomSafeAreaInset) : controlBarHeight;
+    const sessionChromeVisible = !simpleChat && shouldShowTerminalSessionChrome({
       keyboardVisible,
     });
-    const sessionChromeBottom = controlBarHeight + keyboardInset;
+    const sessionChromeBottom = effectiveControlBarHeight + keyboardInset;
     const composerBottom = terminalBottomChromeClearance({
       sessionChromeInset,
       sessionChromeVisible,
@@ -595,7 +594,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           composerExpanded: composeExpanded,
           composerHeight,
           composerVisible: composeOpen,
-          controlBarHeight,
+          controlBarHeight: effectiveControlBarHeight,
           cursorBottom: cursorGeometry?.targetKey === activeTarget?.key
             ? cursorGeometry?.bottom : undefined,
           keyboardInset,
@@ -607,7 +606,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         composeExpanded,
         composeOpen,
         composerHeight,
-        controlBarHeight,
+        effectiveControlBarHeight,
         cursorGeometry,
         activeTarget?.key,
         keyboardInset,
@@ -653,7 +652,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const terminalLatestButtonOffset = terminalLatestButtonBottom({
       sessionChromeInset,
       sessionChromeVisible,
-      terminalBottomInset: controlBarHeight,
+      terminalBottomInset: effectiveControlBarHeight,
     });
     const viewportLatestButtonBottom = terminalLatestButtonBottom({
       sessionChromeInset,
@@ -2404,7 +2403,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           <Portal name={`terminal-composer-${terminalId}`}>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               <View
-                className="absolute inset-x-0 border-t border-terminal-divider bg-transparent p-2"
+                className={cn('absolute inset-x-0 border-t p-2', simpleChat ? 'border-border bg-background' : 'border-terminal-divider bg-transparent')}
                 style={{
                   bottom: composerBottom,
                 }}
@@ -2416,9 +2415,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   );
                 }}
               >
-                {chatHeader}
                 <MessageComposer
                   {...composerInputProps}
+                  compact={simpleChat}
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
                   numberOfLines={3}
@@ -2452,7 +2451,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </View>
           </Portal>
         )}
-        <View
+        {!simpleChat && <View
           collapsable={false}
           className="absolute inset-x-0 bottom-0 z-30"
           style={
@@ -2477,7 +2476,6 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}
           >
             {controlOrder
-              .filter(control => !simpleChat || ['keyboard', 'compose', 'chat', 'esc', 'find'].includes(control))
               .filter(control =>
                 terminalControlIsVisible(
                   control,
@@ -2487,7 +2485,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               )
               .map(renderTerminalControl)}
           </ScrollView>
-        </View>
+        </View>}
         {composeOpen && composeExpanded && (
           <Modal
             animationType="slide"

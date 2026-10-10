@@ -15,8 +15,6 @@ import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager
 import { hostDisplayName } from '../lib/hostProfiles';
 import { bottomNavigationInset } from '../lib/floatingChrome';
 import {
-  chatEfforts,
-  chatModels,
   chatLaunchIntent,
   isChatProvider,
   type ChatEffort,
@@ -42,6 +40,9 @@ import {
   type RecentChat,
 } from '../services/chatLibrary';
 import { chatNeedsAttention } from '../lib/chatInbox';
+import { chatStatusPriority } from '../lib/chatInbox';
+import { fetchChatCatalog, type ChatModelOption } from '../services/chatCatalog';
+import { fetchChatDirectories, type ChatDirectoryOption } from '../services/chatDirectories';
 import {
   checkChatReadiness,
   readinessIssues,
@@ -89,6 +90,12 @@ export function ChatsScreen({
   const [readinessError, setReadinessError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [checkRevision, setCheckRevision] = useState(0);
+  const [catalog, setCatalog] = useState<ChatModelOption[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [directories, setDirectories] = useState<ChatDirectoryOption[]>([]);
+  const [directoriesLoading, setDirectoriesLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState(false);
+  const [folderFilter, setFolderFilter] = useState('');
   const [favoriteSaved, setFavoriteSaved] = useState(false);
   const [selectedFavorite, setSelectedFavorite] = useState<string | null>(null);
   const saved = library?.value ?? emptyChatLibrary;
@@ -142,6 +149,7 @@ export function ChatsScreen({
       const bActivity =
         saved.activity[chatKey(b.session.hostId, b.agent.pane_id)];
       return (
+        chatStatusPriority(a.agent.agent_status) - chatStatusPriority(b.agent.agent_status) ||
         Number(chatNeedsAttention(b.agent, bActivity)) -
           Number(chatNeedsAttention(a.agent, aActivity)) ||
         (bActivity?.updatedAt ?? 0) - (aActivity?.updatedAt ?? 0)
@@ -151,6 +159,33 @@ export function ChatsScreen({
     session?.connectionStatus === 'ready'
       ? sessions.getClient?.(session.id)?.native
       : undefined;
+  const efforts = catalog.find(model => model.id === options.model)?.efforts ?? ['default' as const];
+  useEffect(() => {
+    let cancelled = false;
+    setCatalog([]);
+    setCatalogLoading(false);
+    if (!creating || !native) return;
+    setCatalogLoading(true);
+    fetchChatCatalog(native, provider)
+      .then(models => { if (!cancelled) setCatalog(models); })
+      .catch(() => { if (!cancelled) setCatalog([]); })
+      .finally(() => { if (!cancelled) setCatalogLoading(false); });
+    return () => { cancelled = true; };
+  }, [creating, native, provider, checkRevision]);
+  useEffect(() => {
+    let cancelled = false;
+    setDirectories([]);
+    setDirectoryError(false);
+    setDirectoriesLoading(false);
+    setFolderFilter('');
+    if (!creating || !native) return;
+    setDirectoriesLoading(true);
+    fetchChatDirectories(native)
+      .then(value => { if (!cancelled) setDirectories(value); })
+      .catch(() => { if (!cancelled) setDirectoryError(true); })
+      .finally(() => { if (!cancelled) setDirectoriesLoading(false); });
+    return () => { cancelled = true; };
+  }, [creating, native, checkRevision]);
   useEffect(() => {
     let cancelled = false;
     setReadiness(null);
@@ -196,7 +231,7 @@ export function ChatsScreen({
       ...current,
       providers: {
         ...current.providers,
-        [provider]: { ...current.providers[provider], ...change },
+        [provider]: { ...current.providers[provider], ...(change.model !== undefined ? { effort: 'default' as const } : {}), ...change },
       },
     }));
   };
@@ -250,6 +285,7 @@ export function ChatsScreen({
     busyRef.current = true;
     setBusy(true);
     try {
+      if (!efforts.includes(options.effort)) throw new Error('Choose an effort level supported by the selected model, or use Default.');
       const intent = chatLaunchIntent({ provider, ...options });
       if (!native)
         throw new Error('Connect to the server before starting an agent.');
@@ -278,7 +314,7 @@ export function ChatsScreen({
           ? (
               await sessions.createWorkspace(
                 session.id,
-                name.trim() || 'Chat',
+                name.trim() || directory.trim().split('/').filter(Boolean).at(-1) || 'Chat',
                 directory.trim(),
               )
             ).workspace_id
@@ -805,24 +841,25 @@ export function ChatsScreen({
                 onChangeText={model => updateOptions({ model })}
               />
               <View className="mt-2 flex-row flex-wrap gap-2">
-                {['', ...chatModels[provider]].map(model => (
+                {[{ id: '', label: 'Server default' }, ...catalog.filter(model => model.id)].map(model => (
                   <Choice
-                    key={model}
+                    key={model.id}
                     disabled={busy}
-                    label={model || 'Server default'}
-                    selected={options.model === model}
-                    onPress={() => updateOptions({ model })}
+                    label={model.label}
+                    selected={options.model === model.id}
+                    onPress={() => updateOptions({ model: model.id })}
                   />
                 ))}
               </View>
               <Text className="mt-2 text-xs text-muted-foreground">
-                Leave blank for the server default, or enter any model your
-                account supports.
+                {catalogLoading ? 'Loading models from this server…' : catalog.length
+                  ? 'Models reported by this server. You can also enter a model ID.'
+                  : 'Model list unavailable. Use the server default or enter a model ID.'}
               </Text>
             </Field>
             <Field label="Effort">
               <View className="flex-row flex-wrap gap-2">
-                {chatEfforts[provider].map(effort => (
+                {efforts.map(effort => (
                   <Choice
                     key={effort}
                     disabled={busy}
@@ -833,7 +870,7 @@ export function ChatsScreen({
                 ))}
               </View>
               <Text className="mt-2 text-xs text-muted-foreground">
-                Available effort levels depend on the selected model.
+                {!efforts.includes(options.effort) ? 'The saved effort is unavailable for this model. Choose Default or a supported level.' : 'Effort levels reported for the selected model.'}
               </Text>
             </Field>
             <Field label="Workspace">
@@ -859,6 +896,17 @@ export function ChatsScreen({
                   />
                 ))}
               </View>
+              <Text className="mt-3 text-sm font-medium">New workspace folder</Text>
+              {directoriesLoading ? <Text className="mt-2 text-xs text-muted-foreground">Loading folders…</Text> : null}
+              {directories.length > 10 ? (
+                <Input accessibilityLabel="Find project folder" className="mt-2" value={folderFilter} onChangeText={setFolderFilter} placeholder="Find a project…" autoCorrect={false} />
+              ) : null}
+              <View className="mt-2 flex-row flex-wrap gap-2">
+                {directories.filter(folder => folder.label.startsWith('~') || folder.label.toLowerCase().includes(folderFilter.toLowerCase())).map(folder => (
+                  <Choice key={folder.path} label={folder.label} disabled={busy} selected={directory === folder.path} onPress={() => setDirectory(folder.path)} />
+                ))}
+              </View>
+              {directoryError ? <Text className="mt-2 text-xs text-muted-foreground">Could not load folders. Check the server again or enter a path below.</Text> : null}
               <Input
                 accessibilityLabel="New project directory"
                 className="mt-2"
@@ -866,7 +914,7 @@ export function ChatsScreen({
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={directory}
-                placeholder="Or a new project directory, e.g. /home/me/project"
+                placeholder="Or enter another absolute directory"
                 onChangeText={setDirectory}
               />
             </Field>

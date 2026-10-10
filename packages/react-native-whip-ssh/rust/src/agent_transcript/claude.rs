@@ -17,7 +17,7 @@ use super::projection::{
     timestamp_ms,
 };
 
-const CACHE_VERSION: u32 = 2;
+const CACHE_VERSION: u32 = 3;
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_BLOCKS: usize = 256;
 const MAX_FIELDS: usize = 64;
@@ -232,6 +232,7 @@ pub struct ClaudeTranscriptAdapter {
     ai_title: Option<String>,
     directory: Option<String>,
     leaf: Option<String>,
+    leaf_order: u64,
     #[serde(skip)]
     indexes: HashMap<String, usize>,
 }
@@ -246,6 +247,7 @@ impl ClaudeTranscriptAdapter {
             ai_title: None,
             directory: None,
             leaf: None,
+            leaf_order: 0,
         }
     }
 
@@ -269,7 +271,10 @@ impl ClaudeTranscriptAdapter {
             match kind {
                 "custom-title" => self.custom_title = string(record, "customTitle"),
                 "ai-title" => self.ai_title = string(record, "aiTitle"),
-                "last-prompt" => self.leaf = string(record, "leafUuid"),
+                "last-prompt" => {
+                    self.leaf = string(record, "leafUuid");
+                    self.leaf_order = order;
+                }
                 "system" if record["subtype"] == "compact_boundary" => self.leaf = None,
                 _ => {}
             }
@@ -529,7 +534,11 @@ impl ClaudeTranscriptAdapter {
             .as_ref()
             .and_then(|id| self.indexes.get(id))
             .copied()
-            .filter(|i| !self.nodes[*i].sidechain);
+            .filter(|i| !self.nodes[*i].sidechain)
+            // A saved branch selection only describes history at that point.
+            // Claude can continue on a new branch before writing another stamp;
+            // letting the old stamp win hides those replies until the next prompt.
+            .filter(|_| newest.is_none_or(|i| self.nodes[i].order <= self.leaf_order));
         let latest_chain = self.ancestry(latest);
         let leaf = stamped
             .filter(|stamp| !latest_chain.0.contains(stamp))
