@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -47,6 +47,13 @@ import {
 } from './AppPlatformBindings';
 import { BottomNavigation } from './BottomNavigation';
 import { ConnectRequiredScreen } from './ConnectRequiredScreen';
+import { useCodexHosts } from '../hooks/useCodexHosts';
+import { CodexChatScreen } from './CodexChatScreen';
+import { useAppForeground } from '../hooks/useAppForeground';
+import { updateCodexActivity } from '../lib/codexInbox';
+import { useCodexNotificationNavigation } from '../hooks/useCodexNotificationNavigation';
+import type { useAgentNotifications } from '../hooks/useAgentNotifications';
+import { codexChatKey } from '../services/codexDaemon';
 import { ChatsScreen } from './ChatsScreen';
 import { useChatLibrary } from '../hooks/useChatLibrary';
 import { useChatExperience } from '../hooks/useChatExperience';
@@ -70,6 +77,7 @@ interface AppShellProps {
   terminals: ReturnType<typeof useTerminalSessions>;
   telemetry: ReturnType<typeof useLiveHostTelemetry>;
   history: ReturnType<typeof useTerminalHistory>;
+  notifications?: ReturnType<typeof useAgentNotifications>;
 }
 
 /** Main application presentation. State and lifecycle stay in domain controllers. */
@@ -84,6 +92,7 @@ export function AppShell({
   terminals,
   telemetry,
   history,
+  notifications,
 }: AppShellProps) {
   const { t } = useTranslation();
   const { colors: theme, isDark } = useTheme();
@@ -124,6 +133,16 @@ export function AppShell({
     terminal: terminalPreferences,
     terminalControlUsage,
   } = effectivePreferences;
+  const codexHosts = useCodexHosts(sessions, !security.locked && !hosts.editorProfile, {alertsEnabled, agentAlertLevel, persistentAlertDurationSeconds, ttsEnabled});
+  const [codexSelection, setCodexSelection] = useState<{hostId:string;threadId:string} | null>(null);
+  const codexHost = codexHosts.find(h=>h.hostId===codexSelection?.hostId);
+  const codexVisible = Boolean(codexSelection && navigation.state.tab === 'terminal' && navigation.state.lastNonTerminalTab === 'chats');
+  const openCodex = (hostId:string,threadId:string) => {
+    setCodexSelection({hostId,threadId});
+    const host = codexHosts.find(h=>h.hostId===hostId);
+    if (host) sessions.select(host.sessionId, 'terminal');
+    navigation.showChat();
+  };
   const activeSession = sessions.activeSession;
   const liveClient = activeSession?.connectionStatus === 'ready'
     ? sessions.activeClient ?? null
@@ -133,17 +152,28 @@ export function AppShell({
     : null;
   const terminalVisible =
     navigation.state.tab === 'terminal' && !hosts.editorProfile;
-  const immersiveTerminal = terminalVisible && Boolean(activeSession);
+  const immersiveTerminal = terminalVisible && (Boolean(activeSession) || codexVisible);
   const activeTerminalVisible = Boolean(
     immersiveTerminal &&
       activeSession &&
       terminals.get(activeSession.id, sessions.state).activeTerminalId,
   );
   const chatLibrary = useChatLibrary();
+  const foreground = useAppForeground();
+  const {loaded: libraryLoaded, update: updateLibrary} = chatLibrary;
+  const codexRevision = codexHosts.map(h => `${h.hostId}:${h.snapshot.revision}`).join('|');
+  useEffect(() => {
+    if (!libraryLoaded) return;
+    updateLibrary(old => updateCodexActivity(old, codexHosts.map(h => ({hostId: h.hostId, threads: h.snapshot.threads})),
+      foreground && !security.locked && codexVisible ? codexSelection : null));
+    // Revision identifies the immutable daemon snapshots without a render-created array dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [libraryLoaded, updateLibrary, codexRevision, foreground, security.locked, codexVisible, codexSelection]);
+  useCodexNotificationNavigation(notifications, !security.locked, sessions, hosts, openCodex, () => setCodexSelection(null));
   const activeChatTerminalId = activeSession ? terminals.get(activeSession.id, sessions.state).activeTerminalId : null;
   const activeChatPaneId = activeSession?.snapshot.panes.find(pane => pane.terminal_id === activeChatTerminalId)?.pane_id;
   const chatExperience = useChatExperience(chatLibrary, sessions, navigation, hosts.hosts,
-    activeChatPaneId, !security.locked && !hosts.editorProfile);
+    codexVisible ? undefined : activeChatPaneId, !security.locked && !hosts.editorProfile);
   // Chat keeps the system indicators beside the camera cutout and its title
   // below the top safe area, even when terminals normally use fullscreen.
   const chatSessionVisible = terminalVisible && navigation.state.lastNonTerminalTab === 'chats';
@@ -323,7 +353,9 @@ export function AppShell({
                   >
                     <ChatsScreen
                       library={chatLibrary}
-                      onOpenChat={chatExperience.open}
+                      codexHosts={codexHosts}
+                      onOpenCodex={openCodex}
+                      onOpenChat={target => { setCodexSelection(null); return chatExperience.open(target); }}
                       openError={chatExperience.error}
                       hosts={hosts.hosts}
                       sessions={sessions}
@@ -641,8 +673,23 @@ export function AppShell({
                 ) : null}
               </View>
 
+              {codexVisible && codexSelection && codexHost && sessions.getClient(codexHost.sessionId) ? <CodexChatScreen
+                key={`${codexSelection.hostId}:${codexSelection.threadId}`}
+                hostId={codexSelection.hostId} threadId={codexSelection.threadId} hostName={codexHost.name}
+                daemon={codexHost.client} client={sessions.getClient(codexHost.sessionId)!}
+                onOpenFile={(target,cwd)=>remoteFiles.open(codexHost.sessionId,codexChatKey(codexSelection.threadId),target,cwd)}
+                draftRequest={remoteFiles.draftRequest?.hostSessionId===codexHost.sessionId ? remoteFiles.draftRequest : undefined}
+                onConsumeDraft={remoteFiles.consumeDraft}
+                onTerminal={async (threadId,cwd)=>{
+                  const workspace=await sessions.createWorkspace(codexHost.sessionId,'Codex',cwd);
+                  await sessions.launchTab(codexHost.sessionId,workspace.workspace_id,'Codex', {type:'agent',kind:'codex',args:['resume',threadId],reverseControl:false});
+                  setCodexSelection(null);
+                  navigation.showTerminal(codexHost.sessionId);
+                }}
+              /> : null}
+              {codexVisible && !codexHost ? <ConnectRequiredScreen destination="Codex chat" onPickHost={() => navigation.selectTab('hosts')} /> : null}
               {navigation.mountedTabs.has('terminal') &&
-                activeSession && (
+                !codexVisible && activeSession && (
                   <AgentStatusAnimationProvider enabled={terminalVisible}>
                     <LiveSessionView
                       draftSaveError={terminals.draftError}

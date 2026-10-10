@@ -26,7 +26,9 @@ import {
   saveChatLaunchPreferences,
 } from '../services/chatLaunchPreferences';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import type { HostProfile } from '../types';
+import type { HostProfile, AgentInfo } from '../types';
+import type { CodexHost } from '../hooks/useCodexHosts';
+import { codexChatKey, type CodexThread } from '../services/codexDaemon';
 import { useTheme } from '../theme';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -39,6 +41,7 @@ import {
   type ChatFavorite,
   type ChatTarget,
 } from '../services/chatLibrary';
+import { codexNeedsAttention } from '../lib/codexInbox';
 import { chatNeedsAttention } from '../lib/chatInbox';
 import { chatStatusPriority } from '../lib/chatInbox';
 import { fetchChatCatalog, type ChatModelOption } from '../services/chatCatalog';
@@ -57,6 +60,8 @@ interface Props {
   library?: ChatLibraryController;
   onOpenChat?: (target: ChatTarget) => Promise<void>;
   openError?: string | null;
+  codexHosts?: CodexHost[];
+  onOpenCodex?: (hostId: string, threadId: string) => void;
 }
 
 export function ChatsScreen({
@@ -67,6 +72,8 @@ export function ChatsScreen({
   library,
   onOpenChat,
   openError,
+  codexHosts,
+  onOpenCodex,
 }: Props) {
   const { colors } = useTheme();
   const { bottom } = useSafeAreaInsets();
@@ -118,28 +125,30 @@ export function ChatsScreen({
     workspaceSelection?.hostId === host?.id
       ? (workspaceSelection?.workspaceId ?? '')
       : (workspaces[0]?.workspace_id ?? '');
-  const allAgents = sessions.presentationSessions.flatMap(item =>
+  const allAgents: {session: (typeof sessions.presentationSessions)[number]; agent: AgentInfo; thread?: CodexThread; attention?: boolean}[] = sessions.presentationSessions.flatMap(item =>
     item.snapshot.agents
       .filter(
         agent =>
-          isChatProvider(agent.agent) && (!filter || item.hostId === filter),
+          isChatProvider(agent.agent) && !(codexHosts && agent.agent === 'codex') && (!filter || item.hostId === filter),
       )
       .map(agent => ({ session: item, agent })),
   );
-  const needsYouCount = allAgents.filter(({ session: item, agent }) =>
-    chatNeedsAttention(
-      agent,
-      saved.activity[chatKey(item.hostId, agent.pane_id)],
-    ),
-  ).length;
+  for (const codex of codexHosts ?? []) {
+    const live = sessions.presentationSessions.find(item => item.id === codex.sessionId);
+    if (!live || (filter && codex.hostId !== filter)) continue;
+    for (const thread of codex.snapshot.threads) {
+      const activity = saved.activity[chatKey(codex.hostId, codexChatKey(thread.id))];
+      const pending = codex.snapshot.requests.some(r => r.params.threadId === thread.id && r.params.isBlocking !== false);
+      const attention = codexNeedsAttention(thread, pending, activity);
+      const status = pending ? 'blocked' : thread.status === 'idle' && attention ? 'done' : thread.status;
+      allAgents.push({session: live, thread, attention, agent: {pane_id: codexChatKey(thread.id), terminal_id: codexChatKey(thread.id), tab_id: '', workspace_id: '', agent: 'codex', agent_status: status} as AgentInfo});
+    }
+  }
+  const needsAttention = ({session: item, agent, attention}: (typeof allAgents)[number]) => attention ?? chatNeedsAttention(agent, saved.activity[chatKey(item.hostId, agent.pane_id)]);
+  const needsYouCount = allAgents.filter(needsAttention).length;
   const agents = allAgents
     .filter(
-      ({ session: item, agent }) =>
-        !needsYouOnly ||
-        chatNeedsAttention(
-          agent,
-          saved.activity[chatKey(item.hostId, agent.pane_id)],
-        ),
+      item => !needsYouOnly || needsAttention(item),
     )
     .sort((a, b) => {
       const aActivity =
@@ -148,9 +157,9 @@ export function ChatsScreen({
         saved.activity[chatKey(b.session.hostId, b.agent.pane_id)];
       return (
         chatStatusPriority(a.agent.agent_status) - chatStatusPriority(b.agent.agent_status) ||
-        Number(chatNeedsAttention(b.agent, bActivity)) -
-          Number(chatNeedsAttention(a.agent, aActivity)) ||
-        (bActivity?.updatedAt ?? 0) - (aActivity?.updatedAt ?? 0)
+        Number(needsAttention(b)) -
+          Number(needsAttention(a)) ||
+        (b.thread ? b.thread.updatedAt * 1000 : bActivity?.updatedAt ?? 0) - (a.thread ? a.thread.updatedAt * 1000 : aActivity?.updatedAt ?? 0)
       );
     });
   const native =
@@ -293,12 +302,23 @@ export function ChatsScreen({
       if (
         checked.cli === 'missing' ||
         checked.cli === 'login-required' ||
-        checked.integration !== 'current'
+        (provider === 'claude' && checked.integration !== 'current')
       ) {
         throw new Error(issues.join('\n'));
       }
       // Save before creating remote resources; a storage failure must not duplicate a launch.
       await saveChatLaunchPreferences({ ...preferences, hostId: host.id });
+      if (provider === 'codex' && codexHosts && onOpenCodex) {
+        const backend = codexHosts.find(item => item.hostId === host.id);
+        if (!backend) throw new Error('Codex server is not connected.');
+        let cwd = directory.trim() || workspaceDirectory(selectedWorkspaceId) || '~';
+        if (cwd === '~' || cwd.startsWith('~/')) cwd = (await native.remoteHome()) + cwd.slice(1);
+        const folder = await native.listDirectory(cwd);
+        const thread = await backend.client.create(folder.path, name.trim(), options.model, options.effort);
+        setCreating(false);
+        onOpenCodex(host.id, thread.id);
+        return;
+      }
       const favoriteWorkspace =
         selectedFavorite && directory.trim()
           ? workspaces.find(
@@ -541,7 +561,8 @@ export function ChatsScreen({
               </Button>
             );
           })}
-        {agents.map(({ session: agentSession, agent }) => {
+        {(codexHosts ?? []).filter(item => !filter || item.hostId === filter).map(item => item.snapshot.error ? <Text key={item.hostId} accessibilityRole="alert" className="mb-3 text-sm text-destructive">{item.name} · Codex: {item.snapshot.error}</Text> : null)}
+        {agents.map(({ session: agentSession, agent, thread, attention }) => {
           const snapshot = sessionSnapshot(agentSession);
           const tab = snapshot.tabs.find(item => item.tab_id === agent.tab_id);
           const workspace = snapshot.workspaces.find(
@@ -552,9 +573,10 @@ export function ChatsScreen({
               key={`${agentSession.id}:${agent.pane_id}`}
               variant="outline"
               className="mb-3 h-auto flex-col items-start rounded-2xl p-4"
-              accessibilityLabel={`Open chat ${tab?.label || agent.agent} on ${hostDisplayName(agentSession.host)}`}
+              accessibilityLabel={`Open chat ${thread?.name || tab?.label || agent.agent} on ${hostDisplayName(agentSession.host)}`}
               onPress={() => {
-                if (onOpenChat)
+                if (thread && onOpenCodex) onOpenCodex(agentSession.hostId, thread.id);
+                else if (onOpenChat)
                   void onOpenChat({
                     hostId: agentSession.hostId,
                     paneId: agent.pane_id,
@@ -567,14 +589,14 @@ export function ChatsScreen({
                   className="flex-1 text-base font-semibold"
                   numberOfLines={1}
                 >
-                  {tab?.label || (agent.agent === 'codex' ? 'Codex' : 'Claude')}
+                  {thread?.name || tab?.label || (agent.agent === 'codex' ? 'Codex' : 'Claude')}
                 </Text>
                 <StatusBadge status={agent.agent_status} />
                 {agent.agent_status === 'done' &&
-                chatNeedsAttention(
+                (attention ?? chatNeedsAttention(
                   agent,
                   saved.activity[chatKey(agentSession.hostId, agent.pane_id)],
-                ) ? (
+                )) ? (
                   <Text className="text-xs font-semibold text-primary">
                     New
                   </Text>
@@ -585,7 +607,7 @@ export function ChatsScreen({
                 numberOfLines={1}
               >
                 {hostDisplayName(agentSession.host)} ·{' '}
-                {workspace?.label || 'Workspace'} ·{' '}
+                {thread?.cwd.split('/').filter(Boolean).at(-1) || workspace?.label || 'Workspace'} ·{' '}
                 {agent.agent === 'codex' ? 'Codex' : 'Claude'}
                 {agentSession.connectionStatus === 'ready' ? '' : ' · Offline'}
               </Text>

@@ -16,7 +16,7 @@ import {
   PersistedTerminalsWriter,
 } from '../services/persistedTerminals';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import { ComposerDraftStorage } from '../services/composerDrafts';
+import { composerDraftStorage } from '../services/composerDrafts';
 
 type CoreBinding = {
   core: NativeAppCore;
@@ -28,7 +28,7 @@ export function useTerminalSessions() {
   const coreBindingRef = useRef<CoreBinding | null>(null);
   const composerDraftsRef = useRef(new Map<string, string>());
   const editedDraftsRef = useRef(new Set<string>());
-  const draftStorage = useRef(new ComposerDraftStorage());
+  const draftStorage = useRef(composerDraftStorage);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [fontSizes, setFontSizes] = useState<ReadonlyMap<string, number>>(
     () => new Map(),

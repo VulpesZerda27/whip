@@ -2,6 +2,7 @@ import { DeviceEventEmitter, NativeEventEmitter, NativeModules, Platform } from 
 import * as Speech from 'expo-speech';
 import { NativeChatSpeechQueue } from 'react-native-whip-ssh';
 
+import type { AgentChatState } from '../agentChat';
 import { agentTranscriptService } from './NativeTranscriptService';
 import { reportBackgroundFailure } from './backgroundOperations';
 import { setChatSpeechFocus } from './chatSpeechFocus';
@@ -36,6 +37,7 @@ export function listenToChat(
   target: ChatSpeechTarget,
   onStopped: () => void,
   onError: (error: unknown) => void,
+  source?: (listener: (state: AgentChatState | null, baseline?: boolean) => void) => () => void,
 ): () => void {
   active?.stop();
   const native = NativeModules.HerdrBackground as ChatSpeechNativeModule;
@@ -94,7 +96,8 @@ export function listenToChat(
     }
   };
 
-  unsubscribe = agentTranscriptService.subscribe(target.bindingToken, (state, baseline) => {
+  const subscribe = source ?? (listener => agentTranscriptService.subscribe(target.bindingToken, listener));
+  unsubscribe = subscribe((state, baseline) => {
     if (stopped) return;
     if (!state || state.status === 'closed') {
       stop();

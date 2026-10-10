@@ -170,6 +170,7 @@ function AppContent() {
       terminals={terminals}
       telemetry={telemetry}
       history={history}
+      notifications={notifications}
     />
   );
 }

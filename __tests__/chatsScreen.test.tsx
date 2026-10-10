@@ -287,3 +287,20 @@ test('chats sort blocked, done, working, then idle', async () => {
   const chats = renderer.root.findAll(node => String(node.type) === 'Button' && String(node.props.accessibilityLabel).startsWith('Open chat '));
   expect(chats.map(chat => chat.find(node => String(node.type) === 'StatusBadge').props.status)).toEqual(['blocked', 'done', 'working', 'idle']);
 });
+
+test('daemon Codex rows replace inherited pane rows while Claude keeps its original target', async () => {
+  const {sessions,onShowChats}=setup();
+  Object.assign(sessions.presentationSessions[0].snapshot,{
+    agents:[{agent:'claude',agent_status:'idle',pane_id:'claude-pane',tab_id:'claude-tab',workspace_id:'workspace-host-0'},{agent:'codex',agent_status:'working',pane_id:'wrong-pane',tab_id:'wrong-tab'}],
+    tabs:[{tab_id:'claude-tab',label:'Claude existing'},{tab_id:'wrong-tab',label:'Wrong inherited association'}],
+  });
+  const codexHosts=[{hostId:'host-0',sessionId:'session-host-0',name:'First',snapshot:{threads:[{id:'exact-id',name:'Codex exact',cwd:'/project',updatedAt:12,status:'working'}],requests:[]}}];
+  const openClaude=jest.fn(),openCodex=jest.fn();
+  await act(async()=>{renderer=create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} onOpenChat={openClaude} onOpenCodex={openCodex} codexHosts={codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[]}/>);});
+  const rows=renderer.root.findAll(n=>String(n.type)==='Button' && String(n.props.accessibilityLabel).startsWith('Open chat '));
+  expect(rows).toHaveLength(2);
+  act(()=>{ button('Open chat Codex exact on First').props.onPress(); });
+  expect(openCodex).toHaveBeenCalledWith('host-0','exact-id');
+  act(()=>{ button('Open chat claude on First').props.onPress(); });
+  expect(openClaude).toHaveBeenCalledWith({hostId:'host-0',paneId:'claude-pane'});
+});

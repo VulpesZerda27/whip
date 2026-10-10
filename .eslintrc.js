@@ -8,6 +8,11 @@ module.exports = {
   extends: '@react-native',
   overrides: [
     {
+      files: ['scripts/test-codex-daemon-live.cjs'],
+      parserOptions: { ecmaVersion: 2022 },
+      env: { node: true },
+    },
+    {
       files: ['**/*.ts', '**/*.tsx'],
       extends: [
         'plugin:@typescript-eslint/strict-type-checked',

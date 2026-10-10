@@ -597,6 +597,16 @@ impl std::fmt::Debug for ConnectionExecStream {
 }
 
 impl ConnectionExecStream {
+    pub(crate) fn write(&self, bytes: Vec<u8>) -> Result<(), HerdrConnectionError> {
+        if !self.is_current() || self.closed.load(Ordering::Acquire) {
+            return Err(HerdrConnectionError::Stale);
+        }
+        self.snapshot
+            .ssh
+            .write_exec(&self.channel_id, bytes)
+            .map_err(Into::into)
+    }
+
     pub(crate) fn close(&self) -> Result<(), HerdrConnectionError> {
         if self.closed.swap(true, Ordering::AcqRel) {
             return Ok(());

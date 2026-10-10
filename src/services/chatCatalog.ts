@@ -1,3 +1,4 @@
+import { codexClient, type CodexPage, type CodexModel } from './codexDaemon';
 import type { HostRuntimeConnection } from 'react-native-whip-ssh';
 import { chatEfforts, type ChatEffort, type ChatProvider } from '../lib/chatLaunch';
 
@@ -130,7 +131,17 @@ export function parseChatCatalog(output: string, provider: ChatProvider): ChatMo
   }
 }
 
-export async function fetchChatCatalog(native: Pick<HostRuntimeConnection, 'execute'>, provider: ChatProvider): Promise<ChatModelOption[]> {
+export async function fetchChatCatalog(native: Pick<HostRuntimeConnection, 'execute'> & Partial<Pick<HostRuntimeConnection, 'codexCall'>>, provider: ChatProvider): Promise<ChatModelOption[]> {
+  if (provider === 'codex' && native.codexCall) {
+    const models: ChatModelOption[] = [];
+    let cursor: string | undefined;
+    do {
+      const result = await codexClient(native as HostRuntimeConnection).rpc<CodexPage<CodexModel>>('model/list', {limit:100, ...(cursor ? {cursor} : {})});
+      for (const item of result.data ?? []) if (!item.hidden) models.push({id:item.model,label:item.displayName || item.model,efforts:chatEfforts.codex.filter(e=>e==='default' || (item.supportedReasoningEfforts ?? []).some((v: {reasoningEffort:string})=>v.reasoningEffort===e))});
+      cursor=result.nextCursor || undefined;
+    } while (cursor);
+    return models;
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([

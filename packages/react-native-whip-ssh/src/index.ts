@@ -2521,9 +2521,15 @@ const herdrTerminalEventSink: HerdrTerminalEventSink = {
   },
 };
 
+const codexActivityListeners = new Map<string, Set<() => void>>();
+
 const hostRuntimeEventSink = {
   event(event: HostRuntimeEvent): void {
     const { tag, inner } = event;
+    if (tag === HostRuntimeEvent_Tags.CodexActivity) {
+      codexActivityListeners.get(inner.runtimeId)?.forEach(listener => listener());
+      return;
+    }
     if (tag === HostRuntimeEvent_Tags.SshShellData) {
       runtimeSshShellHandlers
         .get(inner.runtimeId)
@@ -3279,6 +3285,20 @@ export class NativeHostRuntime {
   sshShellGeometry(terminalId: string): RuntimeTerminalGeometry | undefined {
     const geometry = this.runtime.sshShellGeometry(terminalId);
     return geometry ? runtimeTerminalGeometry(geometry) : undefined;
+  }
+
+  subscribeCodexActivity(listener: () => void): () => void {
+    let listeners = codexActivityListeners.get(this.runtimeId);
+    if (!listeners) { listeners = new Set(); codexActivityListeners.set(this.runtimeId, listeners); }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) codexActivityListeners.delete(this.runtimeId);
+    };
+  }
+
+  codexCall(operation: string, payload: string): Promise<string> {
+    return this.runtime.codexCall(operation, payload);
   }
 
   execute(command: string): Promise<string> {

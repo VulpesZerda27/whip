@@ -367,6 +367,11 @@ impl SshSession {
         .map_err(Into::into)
     }
 
+    pub(crate) fn write_exec(&self, channel_id: &str, bytes: Vec<u8>) -> Result<(), SshFailure> {
+        exec_channel_command_for_key(&self.resource_key, channel_id, StreamCommand::Write(bytes))
+            .map_err(Into::into)
+    }
+
     pub(crate) fn close_exec(&self, channel_id: &str) -> Result<(), SshFailure> {
         exec_channel_command_for_key(&self.resource_key, channel_id, StreamCommand::Close)
             .map_err(Into::into)

@@ -55,7 +55,7 @@ export async function checkChatReadiness(
     return await Promise.race([
       Promise.all([
         native.execute(readinessCommand(provider)),
-        native.agentIntegrationStatus(provider),
+        provider === 'codex' ? Promise.resolve('current' as const) : native.agentIntegrationStatus(provider),
       ]).then(([output, integration]) => parseReadiness(output, integration)),
       new Promise<never>((_, reject) => {
         timer = setTimeout(

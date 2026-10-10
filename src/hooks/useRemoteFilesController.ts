@@ -37,6 +37,7 @@ export interface RemoteFilesController {
     sessionId: string,
     terminalId: string,
     target?: TranscriptFileLinkTarget,
+    directory?: string,
   ) => void;
   close: (requestId?: number) => void;
   closeForSession: (sessionId: string) => void;
@@ -60,14 +61,16 @@ export function useRemoteFilesController({
       sessionId: string,
       terminalId: string,
       target?: TranscriptFileLinkTarget,
+    directory?: string,
     ) => {
       const session = findLiveHostSession(getSessions(), sessionId);
       const pane = session && sessionSnapshot(session).panes.find(
         item => item.terminal_id === terminalId,
       );
-      if (!session || !pane) return;
+      const codex = terminalId.startsWith('codex-thread:');
+      if (!session || (!pane && !codex)) return;
       const workspace = sessionSnapshot(session).workspaces.find(
-        item => item.workspace_id === pane.workspace_id,
+        item => item.workspace_id === pane?.workspace_id,
       );
       const pathKey = `${sessionId}:${terminalId}`;
       setRequest({
@@ -77,8 +80,9 @@ export function useRemoteFilesController({
         initialPath: target
           ? parentRemotePath(target.path)
           : pathsRef.current.get(pathKey) ||
-            pane.foreground_cwd ||
-            pane.cwd ||
+            directory ||
+            pane?.foreground_cwd ||
+            pane?.cwd ||
             workspace?.worktree?.checkout_path ||
             '~',
         ...(target
@@ -113,9 +117,9 @@ export function useRemoteFilesController({
         item => item.terminal_id === request.terminalId,
       );
       if (
-        !pane ||
+        (!pane && !request.terminalId.startsWith('codex-thread:')) ||
         !getClient(request.hostSessionId) ||
-        !(session && sessionSnapshot(session).agents.some(agent => agent.pane_id === pane.pane_id))
+        !(session && (request.terminalId.startsWith('codex-thread:') || sessionSnapshot(session).agents.some(agent => agent.pane_id === pane?.pane_id)))
       )
         return false;
       setDraftRequest({
@@ -124,7 +128,7 @@ export function useRemoteFilesController({
         terminalId: request.terminalId,
         text,
       });
-      openTerminal(request.hostSessionId, pane);
+      if (pane) openTerminal(request.hostSessionId, pane);
       close(requestId);
       return true;
     },

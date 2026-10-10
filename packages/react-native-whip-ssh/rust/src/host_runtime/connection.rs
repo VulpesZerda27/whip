@@ -1264,6 +1264,7 @@ impl HostRuntime {
                 inner.terminal_settled.notify_waiters();
                 inner.reverse_control.shutdown();
                 inner.agents.disconnected(true, "Host runtime disconnected");
+                inner.codex_daemon.lock().await.take();
                 close_herdr_event_subscription(inner.id.clone());
                 close_all_herdr_terminal_bridges(inner.id.clone());
                 let ssh = inner.herdr.clear(generation);

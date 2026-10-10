@@ -4,6 +4,7 @@ mod actions;
 mod agent_controls;
 pub use agent_controls::AgentControlView;
 mod agents;
+mod codex_daemon;
 mod connection;
 pub use connection::herdr_protocol_label;
 mod diagnostics;
@@ -225,6 +226,7 @@ pub struct HostLatencyMeasurement {
     reason = "UniFFI data enums cannot box associated records without changing the native API"
 )]
 pub enum HostRuntimeEvent {
+    CodexActivity { runtime_id: String },
     ConnectionStateChanged {
         runtime_id: String,
         status: HostRuntimeStatus,
@@ -546,6 +548,7 @@ impl RuntimeState {
 }
 
 struct RuntimeInner {
+    codex_daemon: AsyncMutex<Option<Arc<codex_daemon::CodexDaemon>>>,
     interaction_response: AsyncMutex<HashMap<String, String>>,
     id: String,
     incarnation: u64,
@@ -776,6 +779,7 @@ pub fn create_host_runtime(
         id: id.clone(),
         incarnation,
         state: Mutex::new(state),
+        codex_daemon: AsyncMutex::new(None),
         agents: AgentSessionManager::new(id.clone(), incarnation, herdr.clone()),
         operations: RemoteOperationManager::default(),
         reverse_control: Arc::new(crate::reverse_control::ReverseControl::for_host(&config)),

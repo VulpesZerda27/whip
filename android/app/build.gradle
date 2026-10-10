@@ -117,7 +117,7 @@ android {
         applicationId = "io.github.vulpeszerda27.whipchat"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 236
+        versionCode = 237
         versionName = appVersion
         manifestPlaceholders.whipProfileable = enableProfiling.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

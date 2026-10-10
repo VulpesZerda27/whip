@@ -68,6 +68,8 @@ export function useAgentNotificationSideEffects({
             'pane-alert-dismiss',
           );
         }
+        // Codex alerts use authoritative daemon thread IDs, never inherited pane hooks.
+        if (agent?.agent === 'codex') continue;
         if (
           status &&
           agent &&

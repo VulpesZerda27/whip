@@ -19228,6 +19228,7 @@ const FfiConverterTypeHostTerminalState = (() => {
 
 // Enum: HostRuntimeEvent
 export enum HostRuntimeEvent_Tags {
+  CodexActivity = 'CodexActivity',
   ConnectionStateChanged = 'ConnectionStateChanged',
   ReconnectScheduled = 'ReconnectScheduled',
   Reconnected = 'Reconnected',
@@ -19244,6 +19245,32 @@ export enum HostRuntimeEvent_Tags {
   FatalError = 'FatalError',
 }
 export const HostRuntimeEvent = (() => {
+  type CodexActivity__interface = {
+    tag: HostRuntimeEvent_Tags.CodexActivity;
+    inner: Readonly<{ runtimeId: string }>;
+  };
+  class CodexActivity_ extends UniffiEnum implements CodexActivity__interface {
+    /**
+     * @private
+     * This field is private and should not be used, use `tag` instead.
+     */
+    readonly [uniffiTypeNameSymbol] = 'HostRuntimeEvent';
+    readonly tag = HostRuntimeEvent_Tags.CodexActivity;
+    readonly inner: Readonly<{ runtimeId: string }>;
+    constructor(inner: { runtimeId: string }) {
+      super('HostRuntimeEvent', 'CodexActivity');
+
+      this.inner = Object.freeze(inner);
+    }
+    static new(inner: { runtimeId: string }): CodexActivity_ {
+      return new CodexActivity_(inner);
+    }
+
+    static instanceOf(obj: any): obj is CodexActivity_ {
+      return obj.tag === HostRuntimeEvent_Tags.CodexActivity;
+    }
+  }
+
   type ConnectionStateChanged__interface = {
     tag: HostRuntimeEvent_Tags.ConnectionStateChanged;
     inner: Readonly<{ runtimeId: string; status: HostRuntimeStatus }>;
@@ -19803,6 +19830,7 @@ export const HostRuntimeEvent = (() => {
 
   return Object.freeze({
     instanceOf,
+    CodexActivity: CodexActivity_,
     ConnectionStateChanged: ConnectionStateChanged_,
     ReconnectScheduled: ReconnectScheduled_,
     Reconnected: Reconnected_,
@@ -19821,6 +19849,7 @@ export const HostRuntimeEvent = (() => {
 })();
 export type HostRuntimeEvent = InstanceType<
   (typeof HostRuntimeEvent)[
+    | 'CodexActivity'
     | 'ConnectionStateChanged'
     | 'ReconnectScheduled'
     | 'Reconnected'
@@ -19845,24 +19874,28 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
     read(from: RustBuffer): TypeName {
       switch (ordinalConverter.read(from)) {
         case 1:
+          return new HostRuntimeEvent.CodexActivity({
+            runtimeId: FfiConverterString.read(from),
+          });
+        case 2:
           return new HostRuntimeEvent.ConnectionStateChanged({
             runtimeId: FfiConverterString.read(from),
             status: FfiConverterTypeHostRuntimeStatus.read(from),
           });
-        case 2:
+        case 3:
           return new HostRuntimeEvent.ReconnectScheduled({
             runtimeId: FfiConverterString.read(from),
             attempt: FfiConverterUInt32.read(from),
             delayMs: FfiConverterUInt64.read(from),
             reason: FfiConverterString.read(from),
           });
-        case 3:
+        case 4:
           return new HostRuntimeEvent.Reconnected({
             runtimeId: FfiConverterString.read(from),
             generation: FfiConverterUInt64.read(from),
             restoredTerminals: FfiConverterUInt32.read(from),
           });
-        case 4:
+        case 5:
           return new HostRuntimeEvent.TerminalStateChanged({
             runtimeId: FfiConverterString.read(from),
             terminalId: FfiConverterString.read(from),
@@ -19871,19 +19904,19 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             retrying: FfiConverterBool.read(from),
             error: FfiConverterOptionalString.read(from),
           });
-        case 5:
+        case 6:
           return new HostRuntimeEvent.SshShellData({
             runtimeId: FfiConverterString.read(from),
             terminalId: FfiConverterString.read(from),
             bytes: FfiConverterArrayBuffer.read(from),
           });
-        case 6:
+        case 7:
           return new HostRuntimeEvent.SshShellClosed({
             runtimeId: FfiConverterString.read(from),
             terminalId: FfiConverterString.read(from),
             reason: FfiConverterString.read(from),
           });
-        case 7:
+        case 8:
           return new HostRuntimeEvent.HostStateChanged({
             runtimeId: FfiConverterString.read(from),
             state: FfiConverterTypeHostStateSnapshot.read(from),
@@ -19892,39 +19925,39 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
             transcriptRetention:
               FfiConverterOptionalTypeAgentTranscriptRetention.read(from),
           });
-        case 8:
+        case 9:
           return new HostRuntimeEvent.LatencyMeasured({
             runtimeId: FfiConverterString.read(from),
             measurement: FfiConverterTypeHostLatencyMeasurement.read(from),
           });
-        case 9:
+        case 10:
           return new HostRuntimeEvent.EventSubscriptionClosed({
             runtimeId: FfiConverterString.read(from),
             reason: FfiConverterString.read(from),
           });
-        case 10:
+        case 11:
           return new HostRuntimeEvent.EventSubscriptionRestored({
             runtimeId: FfiConverterString.read(from),
             generation: FfiConverterUInt64.read(from),
           });
-        case 11:
+        case 12:
           return new HostRuntimeEvent.TransferProgressChanged({
             runtimeId: FfiConverterString.read(from),
             progress: FfiConverterTypeTransferProgress.read(from),
           });
-        case 12:
+        case 13:
           return new HostRuntimeEvent.PreviewStateChanged({
             runtimeId: FfiConverterString.read(from),
             previewId: FfiConverterString.read(from),
             state: FfiConverterTypePreviewState.read(from),
             error: FfiConverterOptionalString.read(from),
           });
-        case 13:
+        case 14:
           return new HostRuntimeEvent.Diagnostic({
             runtimeId: FfiConverterString.read(from),
             diagnostic: FfiConverterTypeRuntimeDiagnostic.read(from),
           });
-        case 14:
+        case 15:
           return new HostRuntimeEvent.FatalError({
             runtimeId: FfiConverterString.read(from),
             message: FfiConverterString.read(from),
@@ -19935,15 +19968,21 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
     }
     write(value: TypeName, into: RustBuffer): void {
       switch (value.tag) {
-        case HostRuntimeEvent_Tags.ConnectionStateChanged: {
+        case HostRuntimeEvent_Tags.CodexActivity: {
           ordinalConverter.write(1, into);
+          const inner = value.inner;
+          FfiConverterString.write(inner.runtimeId, into);
+          return;
+        }
+        case HostRuntimeEvent_Tags.ConnectionStateChanged: {
+          ordinalConverter.write(2, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeHostRuntimeStatus.write(inner.status, into);
           return;
         }
         case HostRuntimeEvent_Tags.ReconnectScheduled: {
-          ordinalConverter.write(2, into);
+          ordinalConverter.write(3, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterUInt32.write(inner.attempt, into);
@@ -19952,7 +19991,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.Reconnected: {
-          ordinalConverter.write(3, into);
+          ordinalConverter.write(4, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterUInt64.write(inner.generation, into);
@@ -19960,7 +19999,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.TerminalStateChanged: {
-          ordinalConverter.write(4, into);
+          ordinalConverter.write(5, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.terminalId, into);
@@ -19971,7 +20010,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.SshShellData: {
-          ordinalConverter.write(5, into);
+          ordinalConverter.write(6, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.terminalId, into);
@@ -19979,7 +20018,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.SshShellClosed: {
-          ordinalConverter.write(6, into);
+          ordinalConverter.write(7, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.terminalId, into);
@@ -19987,7 +20026,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.HostStateChanged: {
-          ordinalConverter.write(7, into);
+          ordinalConverter.write(8, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeHostStateSnapshot.write(inner.state, into);
@@ -20002,35 +20041,35 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.LatencyMeasured: {
-          ordinalConverter.write(8, into);
+          ordinalConverter.write(9, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeHostLatencyMeasurement.write(inner.measurement, into);
           return;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
-          ordinalConverter.write(9, into);
+          ordinalConverter.write(10, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.reason, into);
           return;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
-          ordinalConverter.write(10, into);
+          ordinalConverter.write(11, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterUInt64.write(inner.generation, into);
           return;
         }
         case HostRuntimeEvent_Tags.TransferProgressChanged: {
-          ordinalConverter.write(11, into);
+          ordinalConverter.write(12, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeTransferProgress.write(inner.progress, into);
           return;
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
-          ordinalConverter.write(12, into);
+          ordinalConverter.write(13, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.previewId, into);
@@ -20039,14 +20078,14 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
           return;
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
-          ordinalConverter.write(13, into);
+          ordinalConverter.write(14, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterTypeRuntimeDiagnostic.write(inner.diagnostic, into);
           return;
         }
         case HostRuntimeEvent_Tags.FatalError: {
-          ordinalConverter.write(14, into);
+          ordinalConverter.write(15, into);
           const inner = value.inner;
           FfiConverterString.write(inner.runtimeId, into);
           FfiConverterString.write(inner.message, into);
@@ -20059,9 +20098,15 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
     }
     allocationSize(value: TypeName): number {
       switch (value.tag) {
-        case HostRuntimeEvent_Tags.ConnectionStateChanged: {
+        case HostRuntimeEvent_Tags.CodexActivity: {
           const inner = value.inner;
           let size = ordinalConverter.allocationSize(1);
+          size += FfiConverterString.allocationSize(inner.runtimeId);
+          return size;
+        }
+        case HostRuntimeEvent_Tags.ConnectionStateChanged: {
+          const inner = value.inner;
+          let size = ordinalConverter.allocationSize(2);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeHostRuntimeStatus.allocationSize(
             inner.status,
@@ -20070,7 +20115,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.ReconnectScheduled: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(2);
+          let size = ordinalConverter.allocationSize(3);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterUInt32.allocationSize(inner.attempt);
           size += FfiConverterUInt64.allocationSize(inner.delayMs);
@@ -20079,7 +20124,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.Reconnected: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(3);
+          let size = ordinalConverter.allocationSize(4);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterUInt64.allocationSize(inner.generation);
           size += FfiConverterUInt32.allocationSize(inner.restoredTerminals);
@@ -20087,7 +20132,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.TerminalStateChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(4);
+          let size = ordinalConverter.allocationSize(5);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.terminalId);
           size += FfiConverterTypeHostTerminalState.allocationSize(inner.state);
@@ -20098,7 +20143,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.SshShellData: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(5);
+          let size = ordinalConverter.allocationSize(6);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.terminalId);
           size += FfiConverterArrayBuffer.allocationSize(inner.bytes);
@@ -20106,7 +20151,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.SshShellClosed: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(6);
+          let size = ordinalConverter.allocationSize(7);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.terminalId);
           size += FfiConverterString.allocationSize(inner.reason);
@@ -20114,7 +20159,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.HostStateChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(7);
+          let size = ordinalConverter.allocationSize(8);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeHostStateSnapshot.allocationSize(inner.state);
           size += FfiConverterSequenceTypeAgentStatusTransition.allocationSize(
@@ -20128,7 +20173,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.LatencyMeasured: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(8);
+          let size = ordinalConverter.allocationSize(9);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeHostLatencyMeasurement.allocationSize(
             inner.measurement,
@@ -20137,21 +20182,21 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.EventSubscriptionClosed: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(9);
+          let size = ordinalConverter.allocationSize(10);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.reason);
           return size;
         }
         case HostRuntimeEvent_Tags.EventSubscriptionRestored: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(10);
+          let size = ordinalConverter.allocationSize(11);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterUInt64.allocationSize(inner.generation);
           return size;
         }
         case HostRuntimeEvent_Tags.TransferProgressChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(11);
+          let size = ordinalConverter.allocationSize(12);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeTransferProgress.allocationSize(
             inner.progress,
@@ -20160,7 +20205,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.PreviewStateChanged: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(12);
+          let size = ordinalConverter.allocationSize(13);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.previewId);
           size += FfiConverterTypePreviewState.allocationSize(inner.state);
@@ -20169,7 +20214,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.Diagnostic: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(13);
+          let size = ordinalConverter.allocationSize(14);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterTypeRuntimeDiagnostic.allocationSize(
             inner.diagnostic,
@@ -20178,7 +20223,7 @@ const FfiConverterTypeHostRuntimeEvent = (() => {
         }
         case HostRuntimeEvent_Tags.FatalError: {
           const inner = value.inner;
-          let size = ordinalConverter.allocationSize(14);
+          let size = ordinalConverter.allocationSize(15);
           size += FfiConverterString.allocationSize(inner.runtimeId);
           size += FfiConverterString.allocationSize(inner.message);
           return size;
@@ -22717,6 +22762,14 @@ export interface HostRuntimeLike {
     workspaceId: string,
     asyncOpts_?: { signal: AbortSignal },
   ) /*throws*/ : Promise<void>;
+  /**
+   * JSON-RPC is isolated at this boundary; provider-specific types live in the Codex adapter.
+   */
+  codexCall(
+    operation: string,
+    payload: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ) /*throws*/ : Promise<string>;
   confirmAgentTranscriptCache(confirmationToken: string): boolean;
   connect(asyncOpts_?: { signal: AbortSignal }) /*throws*/ : Promise<void>;
   controlRequest(
@@ -23375,6 +23428,56 @@ export class HostRuntime
         /*asyncOpts:*/ asyncOpts_,
         /*errorHandler:*/ FfiConverterTypeHerdrControlError.lift.bind(
           FfiConverterTypeHerdrControlError,
+        ),
+      );
+    } catch (__error: any) {
+      if (uniffiIsDebug && __error instanceof Error) {
+        __error.stack = __stack;
+      }
+      throw __error;
+    }
+  }
+
+  /**
+   * JSON-RPC is isolated at this boundary; provider-specific types live in the Codex adapter.
+   */
+  async codexCall(
+    operation: string,
+    payload: string,
+    asyncOpts_?: { signal: AbortSignal },
+  ): Promise<string> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+      return await uniffiRustCallAsync(
+        /*rustCaller:*/ uniffiCaller,
+        /*rustFutureFunc:*/ () => {
+          return nativeModule().ubrn_uniffi_whip_ssh_fn_method_hostruntime_codex_call(
+            uniffiTypeHostRuntimeObjectFactory.clonePointer(this),
+            FfiConverterString.lower(
+              operation,
+              nativeModule().rustbuffer_alloc,
+            ),
+            FfiConverterString.lower(payload, nativeModule().rustbuffer_alloc),
+          );
+        },
+        /*pollFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_poll_rust_buffer,
+        /*cancelFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_cancel_rust_buffer,
+        /*completeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_complete_rust_buffer,
+        /*freeFunc:*/ nativeModule()
+          .ubrn_ffi_whip_ssh_rust_future_free_rust_buffer,
+        // Async returns always go through the JS-side converter: the
+        // FFI symbol returns the future handle (u64), and the user-level
+        // RustBuffer comes back via the shared `rust_future_complete_*`
+        // export. The bytes the runtime hands back must be deserialized
+        // here using the per-callable return-type converter.
+        /*liftFunc:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+        /*asyncOpts:*/ asyncOpts_,
+        /*errorHandler:*/ FfiConverterTypeHostRuntimeError.lift.bind(
+          FfiConverterTypeHostRuntimeError,
         ),
       );
     } catch (__error: any) {
@@ -30821,6 +30924,14 @@ function uniffiEnsureInitialized() {
   ) {
     throw new UniffiInternalError.ApiChecksumMismatch(
       'uniffi_whip_ssh_checksum_method_hostruntime_close_workspace',
+    );
+  }
+  if (
+    nativeModule().ubrn_uniffi_whip_ssh_checksum_method_hostruntime_codex_call() !==
+    31539
+  ) {
+    throw new UniffiInternalError.ApiChecksumMismatch(
+      'uniffi_whip_ssh_checksum_method_hostruntime_codex_call',
     );
   }
   if (

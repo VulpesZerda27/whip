@@ -22,28 +22,74 @@ the upstream Hosts, Herd, Terminal and More surfaces are still available.
 Model and effort defaults are remembered separately for each provider. Blank
 model and Default effort inherit the server's CLI settings. Model choices and
 per-model effort levels are fetched from the selected server's installed CLI:
-Codex uses `model/list`; Claude uses its initialization model catalog. Switching
+Codex uses the shared daemon’s `model/list`; Claude uses its initialization model catalog. Switching
 servers/providers refreshes the list and discards late results. Selecting a model
 resets effort to Default; a saved unsupported effort must be changed before launch.
 These are the CLI's reported choices, not an inference-based entitlement check.
 If discovery fails, Server default and manual model entry remain available.
-Discovery requires Python 3 on the server, sends no prompt, suppresses auth/account
-output, and stops its temporary CLI process after the bounded probe. Claude hooks
-and MCP servers are disabled during discovery.
+Claude discovery requires Python 3, sends no prompt, suppresses auth/account output,
+and stops its temporary CLI process after the bounded probe. Claude hooks and MCP
+servers are disabled during discovery. Codex discovery uses the existing daemon
+connection and does not launch a model probe or require Python.
 
-New Claude agents use `--permission-mode auto`. New Codex agents use
-`--ask-for-approval on-request --sandbox workspace-write -c approvals_reviewer='"auto_review"'`.
+New Claude agents use `--permission-mode auto`. New Codex chats use the daemon API with
+`approvalPolicy: on-request`, `sandbox: workspace-write`, and `approvalsReviewer: auto_review`.
 These are automatic review modes; no bypass flag is used. Existing agents retain
-their own settings. Model and effort apply at creation; use a new conversation
-or the terminal's provider controls to change an existing session.
+their own settings. Codex’s model/effort button also changes the next turn in an existing conversation;
+guidance sent during an active turn uses that turn’s settings. Claude’s existing
+terminal controls remain available for changing an existing session.
 
 The remote server needs a compatible Herdr installation, the chosen CLI on its
 login-shell PATH, and a signed-in account. The new-agent form checks CLI presence,
-login status and Herdr integration. Authentication output stays on the server.
+login status and (for Claude) Herdr integration. Codex chat needs a CLI that
+supports `app-server proxy` and the shared-daemon API. Authentication output stays
+on the server.
 Use **Repair integration** for missing/outdated integration or **Server terminal**
 for CLI installation and login. Checks detect saved authentication, not model
 entitlement or subscription limits. Agents run on the server and survive leaving
 the app.
+
+## Codex shared daemon
+
+As of 1.8.11, Chats discovers Codex conversations from each server’s shared daemon
+and uses its actual thread IDs. Conversation titles, directories, terminal pane
+IDs, and inherited hook environment variables are not identity fallbacks. This
+also lists persisted conversations without a currently open desktop terminal.
+Claude continues using its existing Herdr integration and transcript backend.
+
+Whip connects through an exec channel on the existing authenticated SSH connection
+using `codex app-server proxy`. Nothing is exposed on a public port; no separate
+API key, Codex fork, server configuration rewrite, daemon restart, or agent restart
+is required. If there is no daemon, the official idempotent `daemon start` starts it.
+
+Selecting a chat explicitly resumes/subscribes to that exact thread and loads its
+full history. Merely listing chats does not resume them. Whip reconciles the initial
+snapshot against the native event cursor, replaces streaming text with completed
+items, and refreshes full history after a connection change or event-buffer overflow.
+The displayed chat stays tied to its thread even if a desktop terminal switches to
+another conversation. This does not repair upstream Herdr’s terminal-pane mapping;
+the separate Herd/Terminal surfaces still have that upstream limitation.
+
+New Codex chats run without creating a terminal pane. **Open terminal** explicitly
+creates a terminal resuming the same thread. Chat supports text, image/file
+attachments, dictation, stop, guidance during work, model/effort selection, read
+aloud, file previews, and web links. Command/file approvals, permission requests,
+agent questions, and MCP form/website requests have structured controls. Unknown
+future request types retain a Terminal escape hatch. Responses carry the original
+connection and request ID; another client resolving a request removes it here.
+
+Drafts are preserved on send failure. Delivery can be uncertain after a timeout,
+so Whip never automatically resends a mutation. Reconnect reloads the conversation
+for inspection before a manual retry. Existing settings, SSH keys, favorites and
+Claude drafts survive an APK update. Legacy Codex drafts tied to unreliable pane
+IDs remain in their existing storage; they are not guessed onto a daemon thread.
+Historical conversations are initially treated as read. New completions become
+unread and use the existing blocked → done → working → idle ordering.
+
+Native activity callbacks keep daemon updates flowing when Android pauses JavaScript
+timers. Codex alerts use thread IDs and the existing notification preferences;
+tapping an alert opens that thread. As with existing Whip alerts, delivery depends
+on the app’s background service, SSH reachability and Android notification policy.
 
 ## Returning to your work
 
@@ -52,7 +98,8 @@ workspaces are reused when they still match the saved workspace or directory.
 The app opens the Chats list without automatically selecting a conversation.
 Tap a chat to open it; selecting an offline chat reconnects its saved server.
 
-Unsent composer drafts are saved per server and terminal and restored after an
+Unsent composer drafts are saved per server and conversation (Codex thread ID or
+Claude terminal ID) and restored after an
 app restart. Saving failures are shown in chat. This is draft persistence, not a
 durable send queue: pending sends are not replayed automatically after a restart.
 
@@ -66,8 +113,10 @@ a Codex or Claude notification opens that conversation in chat mode. Notificatio
 delivery uses the existing notification settings and Android permissions.
 
 Chat shows **Working**, **Needs you**, or **Offline** status, with **Stop** while
-working and **Reconnect** when offline. Stop sends Escape to the selected agent.
-The header's **Conversation options** menu contains **Read aloud** and **Open terminal**.
+working and **Reconnect** when offline. Stop interrupts the exact Codex turn;
+Claude retains its existing Escape-based control.
+Claude’s **Conversation options** menu contains **Read aloud** and **Open terminal**;
+Codex exposes those controls in its header.
 Chat preserves the desktop terminal's width, including when sending messages,
 attachments, or approval answers. It uses the host's control and transcript
 connections without attaching a phone-sized terminal. **Open terminal** attaches
@@ -161,6 +210,22 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.11 passes 206 Jest suites (2,314 tests), 597 Rust unit tests, TypeScript,
+full ESLint, Clippy, app-version and license checks. Native SSH/WebSocket reads succeeded
+on workstation, Prohosting24, Pangolin and Heast with their existing official Codex
+installations. Isolated conversations verify send, a second client’s final reply,
+steer/interrupt and reconnect without duplicated output. Unit/UI coverage includes
+snapshot/event reconciliation, pagination, stale connections, uncertain sends,
+approval identity, typed questions/forms, draft preservation, unread baselines,
+notification routing and Claude provider isolation. Android emulator checks include
+upgrading the existing package while retaining its saved host, opening the formerly
+broken “Fix clipboard paste” conversation, opening a live Claude conversation,
+restoring a Codex draft after an APK upgrade, sending from the Android composer
+with the keyboard visible, and receiving a completion notification carrying the
+exact thread ID while the app is in the background.
+Physical-phone microphone, audio playback and OS background suspension still need
+device validation; no iOS native build was performed on Linux.
 
 Version 1.8.10 removes Resume last chat and Open on launch, including startup
 behavior and stored-preference handling. All 202 Jest suites (2,292 tests),

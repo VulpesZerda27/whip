@@ -1,5 +1,11 @@
 # Codex shared-daemon investigation
 
+**Implementation update, 2026-10-10:** the preferred direct-daemon architecture
+below is implemented in Whip Chat 1.8.11. Official Codex binaries, server configs,
+and running daemons were not replaced or restarted. See
+[implementation and validation](chat-mode.md#codex-shared-daemon). The original
+investigation and its historical “not implemented” statements are retained below.
+
 Investigated 2026-10-10. This document proposes a fix; it does not implement one.
 No Codex/Herdr configuration, hooks, binaries, or running agents were changed
 during this investigation. The separately requested removal of Whip's Resume

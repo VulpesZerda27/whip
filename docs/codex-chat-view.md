@@ -1,5 +1,17 @@
 # Codex Chat View history
 
+## Whip Chat 1.8.11 and later
+
+The Chats screen now uses the official shared-daemon API over SSH. See
+[Whip Chat](chat-mode.md#codex-shared-daemon) for identity, history, controls,
+reconnection and migration behavior. No pane or rollout-file inference is used
+for this route. The renderer and file/image viewers remain shared with Claude.
+
+## Legacy terminal-bound chat view
+
+The following describes the retained terminal-bound transcript implementation,
+not the new Chats backend.
+
 Whip resolves the active Codex rollout using Herdr's native session ID and
 follows its appended JSONL records over SSH.
 

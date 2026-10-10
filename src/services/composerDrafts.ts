@@ -59,3 +59,6 @@ export class ComposerDraftStorage {
     return next;
   }
 }
+
+// Both providers share one cache and write queue for the same host storage key.
+export const composerDraftStorage = new ComposerDraftStorage();

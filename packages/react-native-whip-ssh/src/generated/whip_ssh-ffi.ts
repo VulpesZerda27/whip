@@ -1051,6 +1051,11 @@ interface NativeModuleInterface {
     uniffiSelf: bigint,
     workspaceId: Uint8Array,
   ): bigint;
+  ubrn_uniffi_whip_ssh_fn_method_hostruntime_codex_call(
+    uniffiSelf: bigint,
+    operation: Uint8Array,
+    payload: Uint8Array,
+  ): bigint;
   ubrn_uniffi_whip_ssh_fn_method_hostruntime_confirm_agent_transcript_cache(
     uniffiSelf: bigint,
     confirmationToken: Uint8Array,
@@ -1613,6 +1618,7 @@ interface NativeModuleInterface {
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_tab(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_terminal(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_close_workspace(): number;
+  ubrn_uniffi_whip_ssh_checksum_method_hostruntime_codex_call(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_confirm_agent_transcript_cache(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_connect(): number;
   ubrn_uniffi_whip_ssh_checksum_method_hostruntime_control_request(): number;

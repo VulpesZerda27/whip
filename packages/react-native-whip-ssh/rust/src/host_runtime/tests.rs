@@ -105,6 +105,7 @@ fn runtime_inner_with_state(
         runtime_config.cached_socket_path.clone(),
     );
     Arc::new(RuntimeInner {
+        codex_daemon: AsyncMutex::new(None),
         interaction_response: AsyncMutex::new(HashMap::new()),
         id: id.to_owned(),
         incarnation: 1,
