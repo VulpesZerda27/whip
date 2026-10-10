@@ -69,6 +69,20 @@ describe('MarkdownText', () => {
     jest.useRealTimers();
   });
 
+  test('makes transcript filenames tappable only when a file link handler is available', () => {
+    const content = 'Saved `artifacts/screen.png`.';
+    const onLinkPress = jest.fn();
+    act(() => { renderer = create(<MarkdownText content={content} variant="transcript" onLinkPress={onLinkPress} />); });
+    const native = () => renderer.root.find(node => String(node.type) === 'EnrichedMarkdownText');
+    expect(native().props.markdown).toBe('Saved [`artifacts/screen.png`](<./artifacts/screen.png>).');
+    act(() => { native().props.onLinkPress({ url: './artifacts/screen.png' }); });
+    expect(onLinkPress).toHaveBeenCalledWith({ url: './artifacts/screen.png' });
+    act(() => { renderer.update(<MarkdownText content={content} variant="tool" onLinkPress={onLinkPress} />); });
+    expect(native().props.markdown).toBe(content);
+    act(() => { renderer.update(<MarkdownText content={content} variant="transcript" />); });
+    expect(native().props.markdown).toBe(content);
+  });
+
   test('renders chat diagrams between native Markdown and preserves source for failures', () => {
     const source = '```mermaid\nflowchart LR\nA --> B\n```\n';
     const onLinkPress = jest.fn();

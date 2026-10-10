@@ -27,6 +27,13 @@ describe('transcript file links', () => {
     });
   });
 
+  it('preserves URL-escaped punctuation as part of the filename', () => {
+    expect(transcriptFileLinkTarget('./artifacts/report%23draft%3F.png', '/repo')).toEqual({
+      path: '/repo/artifacts/report#draft?.png',
+    });
+    expect(transcriptFileLinkTarget('/tmp/name%3A12')).toEqual({ path: '/tmp/name:12' });
+  });
+
   it('leaves web links and document anchors to their normal handlers', () => {
     expect(transcriptFileLinkTarget('https://example.com/file.ts:12')).toBeNull();
     expect(transcriptFileLinkTarget('mailto:hello@example.com')).toBeNull();

@@ -14,6 +14,7 @@ import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { guiFontFamilies } from '../lib/guiFonts';
 import { normalizeRichTextMarkdown } from '../lib/richTextMarkdown';
 import { splitDiagramMarkdown } from '../lib/diagramMarkdown';
+import { linkTranscriptFiles } from '../lib/transcriptFileMarkdown';
 import { colorWithAlpha, useTheme } from '../theme';
 import { MermaidPreview } from './MermaidPreview';
 import { SvgPreview } from './SvgPreview';
@@ -255,14 +256,17 @@ export function MarkdownText({
   const { colors } = useTheme();
   const markdownStyle = useWhipMarkdownStyle(variant);
   const searchQuery = useContext(ChatSearchQuery);
+  const linkFiles = variant === 'transcript' && Boolean(onLinkPress);
   const parts = useMemo(() => {
     const chunks = variant === 'transcript'
       ? splitDiagramMarkdown(content)
       : [{ type: 'markdown' as const, content, start: 0 }];
-    return chunks.map(part => part.type === 'markdown'
-      ? { ...part, content: normalizeRichTextMarkdown(part.content) }
-      : part);
-  }, [content, variant]);
+    return chunks.map(part => {
+      if (part.type !== 'markdown') return part;
+      const normalized = normalizeRichTextMarkdown(part.content);
+      return { ...part, content: linkFiles ? linkTranscriptFiles(normalized) : normalized };
+    });
+  }, [content, variant, linkFiles]);
   const accessibilityLabels = useMemo(() => ({
     list: {
       bulletPoint: t('markdown.a11y.bulletPoint'),

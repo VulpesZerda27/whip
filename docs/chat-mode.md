@@ -76,6 +76,14 @@ cannot peek out underneath. Chat keeps the system status bar beside the camera
 cutout, with the title below the top safe area, even with fullscreen terminals enabled.
 Prompt timestamps and response duration/copy footers are hidden; text remains selectable.
 
+Tap a filename or path in a reply to open it on that conversation's server.
+Plain filenames and inline code paths are linked automatically; relative paths
+use the conversation's working directory. Read/write tool cards also have tappable
+filenames. PNGs and other supported images open in the zoomable image viewer;
+documents use the existing file previews. Local Markdown images become preview
+links instead of trying to load server paths from the phone. Files are fetched
+only when opened; code blocks and existing web links retain their behavior.
+
 Live questions and approval menus appear below the latest response. Choose an
 option, then confirm it. Controls are bound to the current terminal and prompt;
 the native runtime checks the live prompt again before sending an answer. Prompt

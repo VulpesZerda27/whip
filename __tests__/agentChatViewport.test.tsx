@@ -397,6 +397,25 @@ describe('AgentChatView links', () => {
     act(() => rows?.unmount());
   });
 
+  test.each([
+    ['Read', 'file_path'], ['read', 'path'], ['Write', 'filePath'], ['view_image', 'path'],
+  ])('%s filenames open the file viewer without expanding the tool', (name, pathKey) => {
+    const onOpenFile = jest.fn();
+    const stopPropagation = jest.fn();
+    const file = '/repo/artifacts/My Image#1.png';
+    const tool: TranscriptToolPart = {
+      ...failedTool('write'), tool: name,
+      state: { input: { [pathKey]: file }, status: 'completed', output: 'Read file', files: [], loaded: [], diagnostics: [] },
+    };
+    act(() => { renderer = create(<AgentChatView {...chatView(chatState([toolTurn(tool)])).props} onOpenFile={onOpenFile} />); });
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const filename = rows.root.findByProps({ accessibilityLabel: 'Open file My Image#1.png' });
+    act(() => { filename.props.onPress({ stopPropagation }); });
+    expect(stopPropagation).toHaveBeenCalledTimes(1);
+    expect(onOpenFile).toHaveBeenCalledWith({ path: file });
+    expect(rows.root.find(node => String(node.type) === 'Pressable' && node.props.accessibilityState).props.accessibilityState.expanded).toBe(false);
+  });
+
   test.each(['text', 'reasoning', 'plan'] as const)('%s links route web URLs through the browser handler and files through the file viewer', type => {
     const onOpenWebLink = jest.fn();
     const onOpenFile = jest.fn();

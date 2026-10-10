@@ -63,7 +63,7 @@ import { hapticPress } from '../services/interactionFeedback';
 import { APP_GLASS_BORDER_CLASS_NAME, appGlassBackgroundClassName } from '../lib/appGlass';
 import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, LATEST_BUTTON_ICON_SIZE, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
-import { transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
+import { transcriptFileHref, transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
 import { latestButtonStyle, useTheme } from '../theme';
 import type { AgentStatus } from '../types';
@@ -217,7 +217,7 @@ function primitiveArgs(
 }
 
 function toolKind(name: string): ToolKind {
-  if (/^(?:patch|edit|write|file|read)$/i.test(name)) return 'file';
+  if (/^(?:patch|edit|write|file|read|view_image|open_image)$/i.test(name)) return 'file';
   if (/^(?:shell|bash|command|terminal)$/i.test(name)) return 'command';
   if (/web|search|fetch|open_page/i.test(name)) return 'web';
   if (/mcp| · /.test(name)) return 'mcp';
@@ -229,7 +229,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
   const name = item.tool.toLowerCase();
   const kind = toolKind(name);
   const command = textValue(input.command)?.trim();
-  const path = textValue(input.path)?.trim();
+  const path = (textValue(input.path) || textValue(input.file_path) || textValue(input.filePath))?.trim();
   const query = textValue(input.query)?.trim();
   const url = textValue(input.url)?.trim();
   const description = textValue(input.description)?.trim();
@@ -237,7 +237,7 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
     return { title: 'Shell', icon: SquareTerminal, subtitle: command || item.state.title, args: [], command, kind };
   }
   if (kind === 'file') {
-    const action = /read/.test(name)
+    const action = /read|view_image|open_image/.test(name)
       ? { title: 'Read', icon: File }
       : /write/.test(name)
         ? { title: 'Write', icon: FilePlus }
@@ -247,7 +247,8 @@ function toolPresentation(item: TranscriptToolPart): ToolPresentation {
     return {
       ...action,
       subtitle: filename(path) || item.state.title,
-      args: primitiveArgs(input, ['path', 'old_string', 'new_string', 'content']),
+      args: primitiveArgs(input, ['path', 'file_path', 'filePath', 'old_string', 'new_string', 'content']),
+      href: path ? transcriptFileHref(path) : undefined,
       kind,
     };
   }
@@ -347,9 +348,21 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           {displayedSubtitle && !isRunning(item) && (
             <>
               <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
-              <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
-                <SearchText text={displayedSubtitle} />
-              </Text>
+              {presentation.kind === 'file' && presentation.href ? (
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open file ${displayedSubtitle}`}
+                  className="min-h-9 min-w-0 shrink justify-center"
+                  hitSlop={SMALL_ICON_HIT_SLOP}
+                  onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}
+                >
+                  <Text numberOfLines={1} className="text-[13px] leading-5 text-primary underline"><SearchText text={displayedSubtitle} /></Text>
+                </Pressable>
+              ) : (
+                <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
+                  <SearchText text={displayedSubtitle} />
+                </Text>
+              )}
             </>
           )}
           {!isRunning(item) && presentation.args.map(arg => (
