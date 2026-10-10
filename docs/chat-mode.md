@@ -57,7 +57,7 @@ Unsent composer drafts are saved per server and terminal and restored after an
 app restart. Saving failures are shown in chat. This is draft persistence, not a
 durable send queue: pending sends are not replayed automatically after a restart.
 
-Chats sort blocked agents first, then working agents, then idle/finished agents.
+Chats sort blocked agents first, then done agents, then working agents, then idle agents.
 Unread completions and recent activity break ties within those groups.
 
 The **Needs you** filter combines blocked agents with unread completions, which

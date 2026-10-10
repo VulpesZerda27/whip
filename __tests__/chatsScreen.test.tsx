@@ -274,7 +274,7 @@ test('a fetched project folder launches an absolute path on the selected server'
   expect(sessions.createWorkspace).toHaveBeenCalledWith('session-host-0', 'mobile', '/home/test/Projects/mobile');
 });
 
-test('blocked chats lead working chats, which lead even unread finished chats', async () => {
+test('chats sort blocked, done, working, then idle', async () => {
   const { sessions, onShowChats } = setup();
   Object.assign(sessions.presentationSessions[0].snapshot, {
     agents: ['idle', 'done', 'working', 'blocked'].map((status, i) => ({
@@ -285,5 +285,5 @@ test('blocked chats lead working chats, which lead even unread finished chats', 
   });
   await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
   const chats = renderer.root.findAll(node => String(node.type) === 'Button' && String(node.props.accessibilityLabel).startsWith('Open chat '));
-  expect(chats.map(chat => chat.find(node => String(node.type) === 'StatusBadge').props.status)).toEqual(['blocked', 'working', 'done', 'idle']);
+  expect(chats.map(chat => chat.find(node => String(node.type) === 'StatusBadge').props.status)).toEqual(['blocked', 'done', 'working', 'idle']);
 });

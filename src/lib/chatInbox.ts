@@ -3,8 +3,9 @@ import type { ChatActivity } from '../services/chatLibrary';
 
 export function chatStatusPriority(status: string): number {
   if (status === 'blocked') return 0;
-  if (status === 'working' || status === 'busy' || status === 'running') return 1;
-  return 2;
+  if (status === 'done') return 1;
+  if (status === 'working' || status === 'busy' || status === 'running') return 2;
+  return 3;
 }
 
 export function chatFingerprint(agent: AgentInfo): string {
