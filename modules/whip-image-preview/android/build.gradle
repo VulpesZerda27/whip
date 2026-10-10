@@ -1,0 +1,19 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'io.github.kaminarios.whip'
+version = '1.0.0'
+
+android {
+  namespace 'io.github.kaminarios.whip.image'
+  defaultConfig {
+    versionCode 1
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  api 'com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0'
+}

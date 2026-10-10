@@ -3,6 +3,12 @@
 Whip includes or adapts work from the projects listed below. Those portions
 remain subject to their original licenses.
 
+## Subsampling Scale Image View
+
+Whip uses [Subsampling Scale Image View 3.10.0](https://github.com/davemorrissey/subsampling-scale-image-view)
+for Android image previews with full-resolution tiles. Copyright 2018 David
+Morrissey. Distributed under the [Apache License 2.0](assets/licenses/subsampling-scale-image-view-Apache-2.0.txt).
+
 ## OpenCode Web
 
 Whip's Chat View is inspired by and adapted from the conversation design of

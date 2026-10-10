@@ -91,6 +91,13 @@ only when opened. Web links in replies open the built-in browser, including bare
 Markdown links, standalone URLs in backticks, and URLs on web tool cards.
 Fenced code and shell commands retain their original formatting.
 
+Android PNG, JPEG and WebP file previews load tiles from the original downloaded
+file as you zoom, preserving full pixel detail without decoding a huge image all
+at once. **1:1** shows one original image pixel per physical screen pixel;
+**Fit** restores the overview. The viewer shows the original pixel dimensions,
+supports pinch/pan and double-tap, and can zoom beyond 1:1. Other formats and iOS
+keep their existing viewer. The existing 20 MB remote image download limit applies.
+
 Live questions and approval menus appear below the latest response. Choose an
 option, then confirm it. Controls are bound to the current terminal and prompt;
 the native runtime checks the live prompt again before sending an answer. Prompt

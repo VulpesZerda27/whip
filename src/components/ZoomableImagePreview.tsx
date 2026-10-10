@@ -22,6 +22,7 @@ import {
   type ImageZoomSize,
 } from '@/src/lib/imageZoom';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
+import { FullResolutionImagePreview, supportsFullResolutionPreview } from './FullResolutionImagePreview';
 
 interface Props {
   accessibilityLabel: string;
@@ -42,6 +43,13 @@ interface Point {
 const emptySize: ImageZoomSize = { width: 0, height: 0 };
 
 export function ZoomableImagePreview({ accessibilityLabel, uri }: Props) {
+  if (supportsFullResolutionPreview(uri, accessibilityLabel)) {
+    return <FullResolutionImagePreview key={uri} accessibilityLabel={accessibilityLabel} uri={uri} />;
+  }
+  return <TransformImagePreview accessibilityLabel={accessibilityLabel} uri={uri} />;
+}
+
+function TransformImagePreview({ accessibilityLabel, uri }: Props) {
   const [viewport, setViewport] = useState<ImageZoomSize>(emptySize);
   const [sourceSize, setSourceSize] = useState<ImageZoomSize | null>(null);
   const viewportRef = useRef(viewport);

@@ -15,6 +15,15 @@ export interface OpenSourceLicenseNotice {
 
 export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
   {
+    id: 'subsampling-scale-image-view',
+    projectName: 'Subsampling Scale Image View',
+    sourceUrl: 'https://github.com/davemorrissey/subsampling-scale-image-view',
+    attribution: 'Whip uses this Android library for tiled image previews at original resolution.',
+    licenseName: 'Apache License 2.0',
+    copyright: 'Copyright 2018 David Morrissey',
+    licenseAsset: bundledAsset(require('../../assets/licenses/subsampling-scale-image-view-Apache-2.0.txt')),
+  },
+  {
     id: 'shizuku-api',
     projectName: 'Shizuku API',
     sourceUrl: 'https://github.com/RikkaApps/Shizuku-API',
