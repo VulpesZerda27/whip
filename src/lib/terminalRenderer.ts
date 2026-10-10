@@ -48,6 +48,8 @@ export interface TerminalRenderTarget {
   key: string;
   hostSessionId: string;
   client: TerminalRuntimeClient;
+  /** Control/transcript availability, independent of a direct terminal attachment. */
+  hostConnected: boolean;
   session: TerminalSession;
   scroll?: PaneScrollInfo;
 }
@@ -56,6 +58,15 @@ export type TerminalRuntimeClient = Pick<
   HerdrClient,
   'native' | 'snapshot' | 'terminal'
 >;
+
+export function terminalInputStatus(
+  target: TerminalRenderTarget,
+  chatMode: boolean,
+): TerminalSession['status'] {
+  return chatMode && target.session.kind !== 'ssh'
+    ? target.hostConnected ? 'connected' : 'disconnected'
+    : target.session.status;
+}
 
 export function terminalRendererKey(
   hostSessionId: string,

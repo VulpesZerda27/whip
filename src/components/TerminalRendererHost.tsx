@@ -206,6 +206,8 @@ interface Props {
   visible: boolean;
   /** Whether the terminal itself is exposed, rather than covered by chat. */
   renderingEnabled?: boolean;
+  /** Chat uses the control API and must not own the remote terminal's size. */
+  chatMode?: boolean;
   preferences: TerminalPreferences;
   visualViewport?: TerminalVisualViewport;
   offlineTranscript?: string;
@@ -249,6 +251,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   targets,
   visible,
   renderingEnabled = visible,
+  chatMode = false,
   preferences,
   visualViewport = DEFAULT_TERMINAL_VISUAL_VIEWPORT,
   offlineTranscript = '',
@@ -281,12 +284,14 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   const knownTargets = useRef(new Map<string, TerminalRenderTarget>());
   const activeKey = useRef<string | null>(null);
   const appState = useRef(AppState.currentState);
+  const chatModeRef = useRef(chatMode);
   const offlineTranscriptRef = useRef(offlineTranscript);
   const offlineScrollRef = useRef(offlineScroll);
   const visualViewportRef = useRef(visualViewport);
   const previousFontPreference = useRef(preferences.fontSize);
   const serializationTraces = useRef(new Map<string, AppPerformanceTrace>());
   activeKey.current = activeTarget?.key || null;
+  chatModeRef.current = chatMode;
   offlineTranscriptRef.current = offlineTranscript;
   offlineScrollRef.current = offlineScroll;
   visualViewportRef.current = visualViewport;
@@ -328,6 +333,9 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     webView.current?.injectJavaScript(`${script} true;`);
   }, []);
 
+  const usesChatApi = useCallback((entry: RendererEntry) =>
+    chatModeRef.current && entry.target.session.kind !== 'ssh', []);
+
   const relinquishController = useCallback((
     entry: RendererEntry,
     releaseBridge: boolean,
@@ -336,8 +344,13 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     entry.controllerAttachment = null;
     entry.controllerAttached = false;
     entry.connecting = false;
-    if (!attachment) return;
     const { client, session } = entry.target;
+    if (!attachment) {
+      if (releaseBridge && client.terminal.isTerminalBridgeRetained(session.terminalId)) {
+        client.terminal.closeTerminalBridge(session.terminalId);
+      }
+      return;
+    }
     bestEffortCleanup(
       attachment.then(attachmentId => (
         releaseBridge
@@ -443,6 +456,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject]);
 
   const requestFullFrame = useCallback((entry: RendererEntry) => {
+    if (usesChatApi(entry)) return;
     if (entry.repaintRequested) return;
     const dimensions = entry.arbitration.latestDimensions();
     if (!dimensions) return;
@@ -466,7 +480,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       entry.repaintRequested = false;
       reportError(entry.target, String(reason));
     }).finally(() => endAppPerformanceTrace(trace));
-  }, []);
+  }, [usesChatApi]);
 
   const cancelResumeScroll = useCallback((entry: RendererEntry) => {
     resumeScrolls.current.delete(entry.target.key);
@@ -484,6 +498,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     ) return;
     if (
       appState.current !== 'active'
+      || usesChatApi(entry)
       || entry.target.session.kind === 'ssh'
       || entry.target.session.status !== 'connected'
       || entry.alternateScreen
@@ -533,7 +548,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         reason: networkErrorMessage(reason),
       });
     });
-  }, []);
+  }, [usesChatApi]);
 
   const settleResumeConnection = useCallback((entry: RendererEntry) => {
     const state = resumeScrolls.current.get(entry.target.key);
@@ -633,6 +648,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject, requestFullFrame]);
 
   const connectEntry = useCallback((entry: RendererEntry, showConnecting = true) => {
+    if (usesChatApi(entry)) return;
     // Herdr's direct attachment holds the pane's resize lock until released.
     if (entry.target.session.kind !== 'ssh' && appState.current !== 'active') return;
     if (entry.arbitration.state.yielded) return;
@@ -735,6 +751,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     relinquishController,
     requestFullFrame,
     settleResumeConnection,
+    usesChatApi,
   ]);
 
   const ensureEntry = useCallback((target: TerminalRenderTarget | null | undefined): RendererEntry | null => {
@@ -785,6 +802,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject]);
 
   const waitForWritable = useCallback((entry: RendererEntry): Promise<void> => {
+    if (usesChatApi(entry)) return Promise.resolve();
     const terminalId = entry.target.session.terminalId;
     if (
       entry.controllerAttached
@@ -796,7 +814,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     });
     connectEntry(entry);
     return pending;
-  }, [connectEntry]);
+  }, [connectEntry, usesChatApi]);
 
   const enqueueInput = useCallback((
     entry: RendererEntry,
@@ -808,7 +826,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     const writable = entry.controllerAttached
       && !entry.connecting
       && entry.target.client.terminal.isTerminalBridgeRetained(terminalId);
-    const coldWaitTrace: AppPerformanceTrace | null = writable
+    const coldWaitTrace: AppPerformanceTrace | null = writable || usesChatApi(entry)
       ? null
       : beginTerminalColdInputWait();
     return entry.arbitration.queueUserInput({
@@ -822,7 +840,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         } finally {
           endAppPerformanceTrace(coldWaitTrace);
         }
-        if (!activity.reclaimRequired || !dimensions) return;
+        if (usesChatApi(entry) || !activity.reclaimRequired || !dimensions) return;
         await entry.target.client.terminal.resizeTerminal(
           entry.target.session.terminalId,
           dimensions.columns,
@@ -836,7 +854,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       },
       send: operation,
     }).finally(() => endAppPerformanceTrace(coldWaitTrace));
-  }, [cancelResumeScroll, connectEntry, waitForWritable]);
+  }, [cancelResumeScroll, connectEntry, usesChatApi, waitForWritable]);
 
   const reportQueuedInput = useCallback((entry: RendererEntry, data: string) => {
     const target = entry.target.session.status === 'connected'
@@ -867,7 +885,8 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const entry = key ? entries.current.get(key) : null;
       if (!entry) return false;
       if (
-        entry.target.session.status !== 'connected'
+        !usesChatApi(entry)
+        && entry.target.session.status !== 'connected'
         && !entry.arbitration.state.yielded
         && entry.arbitration.state.consecutiveDisplacements === 0
         && isOfflineTerminalNavigationInput(data)
@@ -932,6 +951,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       const currentScroll = currentViewport.scroll || entry.target.scroll;
       if (
         !alternateScreen
+        && !usesChatApi(entry)
         && entry.target.session.kind !== 'ssh'
         && entry.target.session.status === 'connected'
         && currentScroll
@@ -989,7 +1009,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         throw reason;
       });
     },
-  }), [activeCall, cancelResumeScroll, connectEntry, enqueueInput, ensureEntry, inject, reportQueuedInput]);
+  }), [activeCall, cancelResumeScroll, connectEntry, enqueueInput, ensureEntry, inject, reportQueuedInput, usesChatApi]);
 
   useEffect(() => {
     const valid = new Map(targets.map(target => [target.key, target]));
@@ -1035,6 +1055,29 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
   }, [inject, renderingEnabled, visible]);
 
   const activeTargetKey = activeTarget?.key || '';
+  useEffect(() => {
+    if (chatMode) {
+      resumeScrolls.current.clear();
+      for (const entry of entries.current.values()) {
+        if (!usesChatApi(entry)) continue;
+        relinquishController(entry, true);
+        // Input already queued when Chat opened can continue through the API.
+        for (const waiter of entry.writableWaiters.splice(0)) waiter.resolve();
+      }
+      // Evicted renderers can still have a warm native bridge holding a resize
+      // lock. Release those too, keeping the host and transcript connections.
+      for (const target of knownTargets.current.values()) {
+        if (target.session.kind === 'ssh' || entries.current.has(target.key)) continue;
+        if (target.client.terminal.isTerminalBridgeRetained(target.session.terminalId)) {
+          target.client.terminal.closeTerminalBridge(target.session.terminalId);
+        }
+      }
+    } else {
+      const entry = entries.current.get(activeTargetKey);
+      if (entry) connectEntry(entry);
+    }
+  }, [activeTargetKey, chatMode, connectEntry, relinquishController, usesChatApi]);
+
   useEffect(() => {
     if (!hostReady.current || !activeTargetKey) return;
     const entry = entries.current.get(activeTargetKey);
@@ -1145,6 +1188,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
               activeViewport?.alternateScreen === true || entry.alternateScreen;
             if (
               entry.target.session.kind !== 'ssh'
+              && !usesChatApi(entry)
               && entry.target.session.status === 'connected'
               && scroll
               && !alternateScreen
@@ -1224,6 +1268,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     relinquishController,
     settleResumeConnection,
     syncPresentation,
+    usesChatApi,
     visible,
   ]);
 
@@ -1317,7 +1362,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
     const entry = typeof message.key === 'string' ? entries.current.get(message.key) : null;
     if (!entry) return;
     if (message.type === 'fit-complete') {
-      if (appState.current !== 'active' || !entry.arbitration.shouldSendResize()) return;
+      if (usesChatApi(entry) || appState.current !== 'active' || !entry.arbitration.shouldSendResize()) return;
       const resume = resumeScrolls.current.get(entry.target.key);
       const pending = entry.pendingResize;
       if (pending) {
@@ -1373,6 +1418,15 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       try {
         const pastedParts = stringArray(message.parts);
         await enqueueInput(entry, async () => {
+          if (usesChatApi(entry)) {
+            await withTerminalWriteTrace(inputTrace, () =>
+              entry.target.client.native.submitPastes(
+                entry.target.session.paneId,
+                pastedParts.map(prepareTerminalPaste),
+              ),
+            );
+            return;
+          }
           for (const [index, data] of terminalSubmissionWrites(pastedParts).entries()) {
             if (index === 0) {
               await withTerminalWriteTrace(
@@ -1436,7 +1490,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
         entry.pendingResize = dimensions;
         entry.sizeReady = true;
         terminalRendererSizeBecameReady(entry.readinessTrace);
-        if (!entry.arbitration.shouldSendResize()) {
+        if (usesChatApi(entry) || !entry.arbitration.shouldSendResize()) {
           terminalResizeRequestReady(resizeTrace);
           abandonTerminalResizeTrace(resizeTrace);
           return;
@@ -1472,6 +1526,7 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
       ) return;
       if (
         entry.target.session.status !== 'connected'
+        || usesChatApi(entry)
         || entry.arbitration.state.yielded
       ) return;
       cancelResumeScroll(entry);

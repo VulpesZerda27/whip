@@ -56,7 +56,7 @@ import {
   resolveTranscriptFilePath,
   type TranscriptFileLinkTarget,
 } from '@/src/lib/transcriptLinks';
-import type { TerminalRenderTarget } from '@/src/lib/terminalRenderer';
+import { terminalInputStatus, type TerminalRenderTarget } from '@/src/lib/terminalRenderer';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 import { TerminalResidencyEndReason, type TerminalResidencyEnd } from '../lib/terminalResidency';
 import {
@@ -1319,8 +1319,8 @@ export function SessionScreen({
   };
 
   const openAttachments = () => {
-    if (activeTerminalSession?.status !== 'connected') return;
-    setAttachmentTerminalId(activeTerminalSession.terminalId);
+    if (!activeTarget || terminalInputStatus(activeTarget, chatVisible) !== 'connected') return;
+    setAttachmentTerminalId(activeTarget.session.terminalId);
     setAttachmentsOpen(true);
   };
 
@@ -1689,7 +1689,7 @@ export function SessionScreen({
           onOpenTerminal={closeActiveChat}
           key={activeTarget?.key || activePane?.pane_id}
           status={activePane?.agent_status || 'unknown'}
-          online={Boolean(client && activeTarget?.session.status === 'connected')}
+          online={Boolean(client && activeTarget?.hostConnected)}
           readAloud={ttsEnabled}
           onToggleReadAloud={onToggleReadAloud}
           draftSaveError={draftSaveError}
@@ -1820,7 +1820,7 @@ export function SessionScreen({
                                   interactionControls={chatClient && activePane && selected ? (
                                     <AgentInteractionControls
                                       target={{ native: chatClient.native, terminalId, bindingToken: chatView.binding.bindingToken }}
-                                      enabled={visible && shown && activePane.agent_status === 'blocked' && activeTarget?.session.status === 'connected'}
+                                      enabled={visible && shown && activePane.agent_status === 'blocked' && Boolean(client && activeTarget?.hostConnected)}
                                       onOpenTerminal={closeActiveChat}
                                     />
                                   ) : undefined}

@@ -56,7 +56,10 @@ jest.mock(
   '../src/services/performanceTrace',
   () =>
     new Proxy(
-      { __esModule: true },
+      {
+        __esModule: true,
+        withTerminalWriteTrace: (_trace: unknown, operation: () => unknown) => operation(),
+      },
       {
         get: (target, property) =>
           property in target
@@ -213,6 +216,7 @@ describe('TerminalRendererHost lifecycle', () => {
       key: `host-1:${terminalId}`,
       hostSessionId: 'host-1',
       client,
+      hostConnected: true,
       session: {
         terminalId,
         paneId: `pane-${terminalId}`,
@@ -249,14 +253,17 @@ describe('TerminalRendererHost lifecycle', () => {
     targets: TerminalRenderTarget[] = [activeTarget],
     pauseResizeInBackground = true,
     xtermCacheCapacity = preferences.xtermCacheCapacity,
+    initialChatMode = false,
   ) => {
     const eventCallbacks = createCallbacks();
     const injected: string[] = [];
     const handle = createRef<TerminalRendererHandle>();
     const requestFocus = jest.fn();
+    let chatMode = initialChatMode;
+    let selectedTarget = activeTarget;
     const renderHost = (
       target: TerminalRenderTarget,
-      renderingEnabled = true,
+      renderingEnabled = !chatMode,
       visible = true,
       fontSize = preferences.fontSize,
     ) => (
@@ -268,6 +275,7 @@ describe('TerminalRendererHost lifecycle', () => {
         targets={targets}
         visible={visible}
         renderingEnabled={renderingEnabled}
+        chatMode={chatMode}
       />
     );
     await act(async () => {
@@ -302,10 +310,15 @@ describe('TerminalRendererHost lifecycle', () => {
       cellHeightPx: 16,
     });
     const activateTarget = async (target: TerminalRenderTarget) => {
+      selectedTarget = target;
       await act(async () => {
         renderer.update(renderHost(target));
         await Promise.resolve();
       });
+    };
+    const setChatMode = async (enabled: boolean) => {
+      chatMode = enabled;
+      await act(async () => { renderer.update(renderHost(selectedTarget)); });
     };
     const setPresentation = async (renderingEnabled: boolean, visible = true) => {
       await act(async () => { renderer.update(renderHost(activeTarget, renderingEnabled, visible)); });
@@ -322,6 +335,7 @@ describe('TerminalRendererHost lifecycle', () => {
     return {
       activateTarget,
       setPresentation,
+      setChatMode,
       setFontPreference,
       eventCallbacks,
       handle,
@@ -331,7 +345,7 @@ describe('TerminalRendererHost lifecycle', () => {
     };
   };
 
-  test('pauses painting under chat without releasing the terminal, then restores presentation', async () => {
+  test('pauses painting without changing ownership when Chat mode is off', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
@@ -349,16 +363,143 @@ describe('TerminalRendererHost lifecycle', () => {
     expect(injected).toContain('window.herdrActivate(null); true;');
   });
 
-  test('a WebView reload under chat does not reveal the terminal', async () => {
+  test('a WebView reload under chat does not reveal or reattach the terminal', async () => {
     const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
     const client = createClient({ 'term-1': scroll });
     const target = createTarget('term-1', client, scroll);
-    const { injected, setPresentation, webView } = await mountReadyHost(target);
-    await setPresentation(false);
+    const { injected, setChatMode, webView } = await mountReadyHost(target);
+    await setChatMode(true);
+    client.openTerminal.mockClear();
+    client.resizeTerminal.mockClear();
     injected.length = 0;
     await sendRendererMessage(webView, { type: 'ready' });
     expect(injected.filter(script => script.includes('window.herdrActivate(')))
       .toEqual(['window.herdrActivate(null); true;']);
+    await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+    await sendRendererMessage(webView, { type: 'fit-complete', key: target.key });
+    expect(client.openTerminal).not.toHaveBeenCalled();
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+  });
+
+  test('Chat sends text and attachments without acquiring or resizing a terminal', async () => {
+    const scroll = { offset_from_bottom: 20, max_offset_from_bottom: 100, viewport_rows: 50 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    const { handle, webView, eventCallbacks } = await mountReadyHost(target, [target], true, 4, true);
+
+    await act(async () => {
+      await handle.current?.submitPastes(target, ['Please check this', '/tmp/screenshot.png']);
+      handle.current?.paste('extra text');
+      handle.current?.input('\u001b');
+      handle.current?.scrollToVisualBottom();
+    });
+    await sendRendererMessage(webView, { type: 'scroll', key: target.key, direction: 'down', lines: 20 });
+    expect(client.native.submitPastes).toHaveBeenCalledWith(
+      target.session.paneId, ['Please check this', '/tmp/screenshot.png'],
+    );
+    expect(client.native.requestHerdrApi).toHaveBeenCalledWith({
+      method: 'pane.send_input',
+      params: { pane_id: target.session.paneId, text: 'extra text', keys: [] },
+    });
+    expect(eventCallbacks.onInput).toHaveBeenCalledWith(target, '\u001b');
+    expect(client.openTerminal).not.toHaveBeenCalled();
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+    expect(client.scrollTerminal).not.toHaveBeenCalled();
+  });
+
+  test('Chat survives background, resize, and target changes; Terminal uses the latest measured size', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 50 };
+    const client = createClient({ 'term-1': scroll, 'term-2': scroll });
+    const first = createTarget('term-1', client, scroll);
+    const second = createTarget('term-2', client, scroll);
+    const { activateTarget, setChatMode, setFontPreference, webView } =
+      await mountReadyHost(first, [first, second]);
+    await setChatMode(true);
+    expect(client.releaseTerminal).toHaveBeenCalledWith('term-1', expect.anything());
+    expect(client.isTerminalBridgeRetained('term-1')).toBe(false);
+    client.openTerminal.mockClear();
+    client.resizeTerminal.mockClear();
+
+    await emitAppState('background');
+    await emitAppState('active');
+    await activateTarget(second);
+    await setFontPreference(18, second);
+    await sendRendererMessage(webView, { type: 'terminal-ready', key: second.key });
+    await sendRendererMessage(webView, {
+      type: 'resize', source: 'fit', key: second.key,
+      cols: 45, rows: 30, cellWidthPx: 12, cellHeightPx: 24,
+    });
+    await sendRendererMessage(webView, { type: 'fit-complete', key: second.key });
+    expect(client.openTerminal).not.toHaveBeenCalled();
+    expect(client.resizeTerminal).not.toHaveBeenCalled();
+
+    await setChatMode(false);
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+    expect(client.openTerminal).toHaveBeenCalledWith(
+      'term-2', expect.any(Function), expect.any(Function), expect.any(Function),
+      { columns: 45, rows: 30, cellWidthPx: 12, cellHeightPx: 24 },
+    );
+    await setChatMode(true);
+    expect(client.isTerminalBridgeRetained('term-2')).toBe(false);
+  });
+
+  test('entering Chat releases evicted bridges as well as resident terminals', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({});
+    const targets = Array.from({ length: MIN_XTERM_CACHE_CAPACITY + 1 }, (_, i) =>
+      createTarget(`term-${i}`, client, scroll));
+    const { activateTarget, setChatMode, webView } = await mountReadyHost(
+      targets[0], targets, true, MIN_XTERM_CACHE_CAPACITY,
+    );
+    for (const target of targets.slice(1)) {
+      await activateTarget(target);
+      await sendRendererMessage(webView, { type: 'terminal-ready', key: target.key });
+      await sendRendererMessage(webView, {
+        type: 'resize', key: target.key, cols: 80, rows: 24, cellWidthPx: 8, cellHeightPx: 16,
+      });
+    }
+    expect(client.detachTerminal).toHaveBeenCalled();
+    expect(client.isTerminalBridgeRetained('term-0')).toBe(true);
+    await setChatMode(true);
+    for (const target of targets) {
+      expect(client.isTerminalBridgeRetained(target.session.terminalId)).toBe(false);
+    }
+    expect(client.closeTerminalBridge).toHaveBeenCalledWith('term-0');
+  });
+
+  test('Chat releases a pending attach and lets queued input finish once via the API', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 100, viewport_rows: 24 };
+    const client = createClient({ 'term-1': scroll });
+    const target = createTarget('term-1', client, scroll);
+    let finishAttach!: (id: { testAttachmentId: number }) => void;
+    client.openTerminal.mockImplementationOnce(() => new Promise(resolve => { finishAttach = resolve; }));
+    const { handle, setChatMode, webView } = await mountReadyHost(target);
+    let submission: Promise<void> | undefined;
+    await act(async () => {
+      submission = handle.current?.submitPastes(target, ['queued message']);
+    });
+    expect(client.native.submitPastes).not.toHaveBeenCalled();
+    await setChatMode(true);
+    await act(async () => { await submission; });
+    expect(client.native.submitPastes).toHaveBeenCalledTimes(1);
+    await act(async () => { finishAttach({ testAttachmentId: 42 }); });
+    expect(client.releaseTerminal).toHaveBeenCalledWith('term-1', { testAttachmentId: 42 });
+    await sendRendererMessage(webView, { type: 'buffered-submit', key: target.key, parts: ['delayed paste'] });
+    expect(client.native.submitPastes).toHaveBeenLastCalledWith(target.session.paneId, ['delayed paste']);
+    expect(client.openTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  test('failed Chat submissions report the API error without opening a terminal', async () => {
+    const scroll = { offset_from_bottom: 0, max_offset_from_bottom: 0, viewport_rows: 24 };
+    const client = createClient({});
+    const target = createTarget('term-1', client, scroll);
+    const { handle, eventCallbacks } = await mountReadyHost(target, [target], true, 4, true);
+    client.native.submitPastes.mockRejectedValueOnce(new Error('Connection lost'));
+    await act(async () => {
+      await expect(handle.current?.submitPastes(target, ['hello'])).rejects.toThrow('Connection lost');
+    });
+    expect(eventCallbacks.onError).toHaveBeenCalledWith(target, 'Error: Connection lost');
+    expect(client.openTerminal).not.toHaveBeenCalled();
   });
 
   test('touches do not take WebView focus while terminal keyboard input is disabled', async () => {

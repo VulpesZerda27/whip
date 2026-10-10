@@ -362,6 +362,7 @@ export function useSessionTerminalLifecycle({
           key: terminalRendererKey(session.id, terminal.terminalId),
           hostSessionId: session.id,
           client: runtime.client,
+          hostConnected: session.connectionStatus === 'ready',
           session: terminal,
           scroll:
             snapshot.panes.find(

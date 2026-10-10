@@ -27,6 +27,7 @@ import {
 } from '../src/lib/floatingChrome';
 import { setTerminalKeyboardOverlay } from '../src/services/terminalSoftInput';
 import { uploadPastedComposerImage } from '../src/services/composerImagePaste';
+import * as performanceTrace from '../src/services/performanceTrace';
 
 jest.mock('../src/services/composerImagePaste', () => ({ uploadPastedComposerImage: jest.fn() }));
 jest.mock('../src/services/attachmentPaste', () => ({ discardClipboardAttachment: jest.fn() }));
@@ -166,6 +167,7 @@ const target = {
   key: 'target-1',
   hostSessionId: 'host-1',
   client: {},
+  hostConnected: true,
   session: {
     terminalId: 'terminal-1',
     title: 'Terminal',
@@ -305,6 +307,42 @@ beforeEach(() => {
   });
 });
 
+test.each([false, true])('Chat raw keys use the control API with tracing=%s', async tracing => {
+  const inputTrace = tracing ? {} as performanceTrace.TerminalInputTrace : null;
+  const beginTrace = jest.spyOn(performanceTrace, 'beginTerminalInputTrace').mockReturnValue(inputTrace);
+  const writeTrace = jest.spyOn(performanceTrace, 'withTerminalWriteTrace')
+    .mockImplementation(async (_trace, operation) => operation());
+  const requestHerdrApi = jest.fn(async () => ({ type: 'ok' }));
+  const writeToTerminal = jest.fn(async () => '');
+  const chatTarget = {
+    ...target,
+    session: { ...target.session, kind: 'herdr' as const, paneId: 'pane-1', status: 'disconnected' as const },
+    client: { native: { requestHerdrApi }, terminal: { writeToTerminal } },
+  } as unknown as typeof target;
+  try {
+    mount({ chatViewEnabled: true, activeTarget: chatTarget, targets: [chatTarget] });
+    expect(ui('TerminalRendererHost').props.chatMode).toBe(true);
+    await act(async () => {
+      await ui('TerminalRendererHost').props.onInput(chatTarget, '\u001b');
+    });
+    expect(requestHerdrApi).toHaveBeenCalledWith({
+      method: 'pane.send_text', params: { pane_id: 'pane-1', text: '\u001b' },
+    });
+    expect(writeToTerminal).not.toHaveBeenCalled();
+
+    chatTarget.session.status = 'connected';
+    act(() => renderer.update(<TerminalScreen {...props} activeTarget={chatTarget} targets={[chatTarget]} />));
+    await act(async () => {
+      await ui('TerminalRendererHost').props.onInput(chatTarget, 'x');
+    });
+    expect(writeToTerminal).toHaveBeenCalledTimes(1);
+    expect(requestHerdrApi).toHaveBeenCalledTimes(1);
+  } finally {
+    beginTrace.mockRestore();
+    writeTrace.mockRestore();
+  }
+});
+
 test('volume keys use the latest terminal action and ignore hidden terminals', () => {
   const fontPreferences = { ...props.preferences, volumeUpAction: 'font-size' as const };
   const scrollPreferences = { ...props.preferences, volumeUpAction: 'scroll' as const };
@@ -372,6 +410,26 @@ test.each([false, true])('composer reports message acceptance in terminal and ch
 
   expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(1);
   expect(props.onComposerDraftChange).toHaveBeenLastCalledWith('terminal-1', '');
+});
+
+test('Chat submits while the renderer is disconnected and queues until the host reconnects', async () => {
+  const chatTarget = { ...target, session: { ...target.session, status: 'disconnected' as const } };
+  mount({ chatViewEnabled: true, activeTarget: chatTarget, targets: [chatTarget] });
+  await press('compose');
+  act(() => { ui('MessageComposer').props.onChangeText('hello'); });
+  await act(async () => { expect(ui('MessageComposer').props.actions.onSend()).toBe(true); });
+  expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(1);
+
+  const offlineTarget = { ...chatTarget, hostConnected: false };
+  act(() => renderer.update(<TerminalScreen {...props} chatViewEnabled activeTarget={offlineTarget} targets={[offlineTarget]} />));
+  act(() => { ui('MessageComposer').props.onChangeText('when online'); });
+  await act(async () => { expect(ui('MessageComposer').props.actions.onSend()).toBe(true); });
+  expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    renderer.update(<TerminalScreen {...props} chatViewEnabled activeTarget={chatTarget} targets={[chatTarget]} />);
+  });
+  expect(terminalHandle.submitPastes).toHaveBeenCalledTimes(2);
+  expect(terminalHandle.submitPastes).toHaveBeenLastCalledWith(chatTarget, ['when online'], true);
 });
 
 function pendingImageUpload() {

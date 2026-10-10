@@ -96,6 +96,7 @@ import {
 import { OfflineTerminalBackend } from '../lib/offlineTerminalBackend';
 import {
   directTerminalKeyboardEnabled,
+  terminalInputStatus,
   terminalLatestButtonVisible,
   terminalScrollbackMode,
   type TerminalRenderTarget,
@@ -458,7 +459,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const session = activeTarget?.session || null;
     const terminalId = session?.terminalId || '';
     const sessionTitle = session?.title || '';
-    const status = session?.status || 'connecting';
+    const status = activeTarget ? terminalInputStatus(activeTarget, chatViewEnabled) : 'connecting';
     const renderer = useRef<TerminalRendererHandle | null>(null);
     const activeTargetRef = useRef(activeTarget);
     const keyboardViewportRef = useRef<View | null>(null);
@@ -889,7 +890,8 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       refocusTerminal = true,
     ): Promise<boolean> => {
       if (!target) return false;
-      if (target.session.status !== 'connected') {
+      if (terminalInputStatus(target, chatViewEnabled) !== 'connected') {
+        if (chatViewEnabled && target.session.kind !== 'ssh') return false;
         return target.key === activeTargetRef.current?.key
           ? Boolean(renderer.current?.input(data))
           : false;
@@ -903,15 +905,20 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         current ? { ...current, offset_from_bottom: 0 } : current,
       );
       try {
-        await withTerminalWriteTrace(inputTrace, () =>
-          inputTrace
-            ? target.client.terminal.writeToTerminal(
-                target.session.terminalId,
-                data,
-                inputTrace,
-              )
-            : target.client.terminal.writeToTerminal(target.session.terminalId, data),
-        );
+        await withTerminalWriteTrace(inputTrace, async () => {
+          if (chatViewEnabled && target.session.kind !== 'ssh') {
+            // Raw keys must use the API too: a terminal write would reopen the
+            // direct bridge and take the desktop's resize lock.
+            await target.client.native.requestHerdrApi({
+              method: 'pane.send_text',
+              params: { pane_id: target.session.paneId, text: data },
+            });
+          } else if (inputTrace) {
+            await target.client.terminal.writeToTerminal(target.session.terminalId, data, inputTrace);
+          } else {
+            await target.client.terminal.writeToTerminal(target.session.terminalId, data);
+          }
+        });
         if (target.key === activeTargetRef.current?.key) setError(null);
         if (
           refocusTerminal &&
@@ -1182,7 +1189,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       async (target: TerminalRenderTarget) => {
         const targetKey = target.key;
         if (
-          target.session.status !== 'connected' ||
+          terminalInputStatus(target, chatViewEnabled) !== 'connected' ||
           queueFlushesRef.current.has(targetKey)
         )
           return;
@@ -1244,7 +1251,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           queueFlushesRef.current.delete(targetKey);
         }
       },
-      [onHistoryEntry, publishQueuedMessages, scheduleQueuedRetry],
+      [chatViewEnabled, onHistoryEntry, publishQueuedMessages, scheduleQueuedRetry],
     );
     flushQueuedTargetRef.current = target => {
       reportBackgroundFailure(
@@ -1256,13 +1263,13 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     useEffect(() => {
       for (const target of targets) {
         if (
-          target.session.status === 'connected' &&
+          terminalInputStatus(target, chatViewEnabled) === 'connected' &&
           queuedMessagesByTargetRef.current.has(target.key)
         ) {
           flushQueuedTargetRef.current(target);
         }
       }
-    }, [targets]);
+    }, [chatViewEnabled, targets]);
 
     useEffect(() => {
       imagePasteMountedRef.current = true;
@@ -2182,6 +2189,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
               targets={targets}
               visible={visible}
               renderingEnabled={visible && !chatViewEnabled}
+              chatMode={chatViewEnabled}
               preferences={preferences}
               visualViewport={terminalVisualViewport}
               offlineTranscript={offlineSnapshot.transcript}

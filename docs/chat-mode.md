@@ -69,6 +69,11 @@ delivery uses the existing notification settings and Android permissions.
 Chat shows **Working**, **Needs you**, or **Offline** status, with **Stop** while
 working and **Reconnect** when offline. Stop sends Escape to the selected agent.
 The header's **Conversation options** menu contains **Read aloud** and **Open terminal**.
+Chat preserves the desktop terminal's width, including when sending messages,
+attachments, or approval answers. It uses the host's control and transcript
+connections without attaching a phone-sized terminal. **Open terminal** attaches
+at the phone's dimensions; returning to Chat releases that attachment so the
+desktop can use its own dimensions again.
 Simple chat has no back arrow or terminal shortcut bar; use the system back gesture.
 A single input row grows as you type, with attachment, voice and send controls.
 Its opaque background extends through the bottom gesture area so scrolled messages
@@ -150,6 +155,16 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.8 passes all 201 Jest suites (2,289 tests), TypeScript, full ESLint,
+the app-version check, and the iOS JavaScript bundle build. Regression tests cover
+Chat without a terminal attachment, messages and attachments, raw keys with
+tracing enabled, disconnected renderer status, host reconnection, live approval
+controls, background/resume, delayed attachment release, evicted bridges, and
+switching back to Terminal with the latest phone geometry. The signed ARM64 APK
+builds and verifies, installs over the emulator's existing app, and launches
+without JavaScript errors. This emulator has no saved SSH host; live desktop
+width transitions and the physical-phone update have not been verified there.
 
 Version 1.8.7 passes all 201 Jest suites (2,274 tests) for file taps, followed by
 152 focused file/link tests after adding inline-code web URLs and web tool taps.

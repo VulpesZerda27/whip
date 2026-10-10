@@ -148,9 +148,17 @@ The renderer is responsible for ANSI color, alternate screen applications, curso
 
 ### Rust-owned agent transcripts
 
-Codex and OpenCode panes can expose two presentations of the same live process. The existing
-Herdr terminal stream continues to feed the mounted xterm Terminal View. After
-the user explicitly opens Chat, the Rust `HostRuntime` uses the pane's Herdr
+Codex, Claude, and OpenCode panes can expose two presentations of the same live
+process. Terminal View attaches to the Herdr terminal stream at the phone's
+dimensions. Chat keeps xterm mounted but releases direct terminal ownership,
+including warm bridges for evicted renderers, and suppresses remote resizes and
+scrolls. Composer input and raw keys use the control API without waiting for a
+terminal attachment. Chat availability follows the host connection rather than
+the renderer's lifecycle, so messages and approval controls remain usable while
+the desktop keeps its own dimensions. Returning to Terminal attaches using the
+latest measured phone geometry.
+
+When Chat opens, the Rust `HostRuntime` uses the pane's Herdr
 `agent_session` ID to open an `AgentSessionManager` entry and resolve that exact
 Codex rollout or OpenCode export/event source through the existing stable
 connection:

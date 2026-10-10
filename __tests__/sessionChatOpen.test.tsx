@@ -93,6 +93,8 @@ jest.mock('../src/components/TerminalScreen', () => {
         element(TerminalRendererHost, {
           activeTarget: props.activeTarget, targets: props.targets,
           preferences: props.preferences, visible: props.visible,
+          chatMode: props.chatViewEnabled,
+          renderingEnabled: props.visible && !props.chatViewEnabled,
           onResidencyEnd: props.onResidencyEnd,
           onInput: noop, onScroll: noop, onOfflineScroll: noop, onOfflineSnapshot: noop,
           onSearchResult: noop, onLinksScanned: noop, onOpenLink: noop, onPaste: noop,
@@ -254,7 +256,7 @@ function setup(agent: ChatAgent) {
       activeTerminalId: terminal.terminalId,
     },
     terminalTargets: [
-      { key: 'target', hostSessionId: 'host-1', client, session: terminal },
+      { key: 'target', hostSessionId: 'host-1', client, hostConnected: true, session: terminal },
     ],
     terminalPreferences: { fullscreen: true, xtermCacheCapacity: 3 } as Props['terminalPreferences'],
     terminalControlUsage: {},
@@ -549,6 +551,7 @@ function revealChat() {
 test.each(['codex', 'claude'] as const)('live %s approval controls use the selected chat binding', async agent => {
   const host = setup(agent);
   host.pane.agent_status = 'blocked';
+  host.props.terminalState.sessions[0].status = 'disconnected';
   await openReadyChat(host, agent);
   revealChat();
   const interaction = ui('AgentChatView').props.interactionControls;
@@ -556,6 +559,9 @@ test.each(['codex', 'claude'] as const)('live %s approval controls use the selec
   expect(interaction.props.target.native).toBe(host.native);
   expect(interaction.props.target.terminalId).toBe(host.pane.terminal_id);
   expect(interaction.props.target.bindingToken).toBeTruthy();
+  const onlineTargets = host.props.terminalTargets;
+  act(() => { renderer.update(<SessionScreen {...host.props} terminalTargets={onlineTargets.map(target => ({ ...target, hostConnected: false }))} />); });
+  expect(ui('AgentChatView').props.interactionControls.props.enabled).toBe(false);
   act(() => { renderer.update(<SessionScreen {...host.props} visible={false} />); });
   expect(ui('AgentChatView').props.interactionControls.props.enabled).toBe(false);
 });
@@ -634,7 +640,7 @@ function addCachePressure(host: ReturnType<typeof setup>) {
   host.props.terminalTargets = [
     ...host.props.terminalTargets,
     ...terminals.map(session => ({
-      key: session.terminalId, hostSessionId: host.props.hostSessionId, client: host.client, session,
+      key: session.terminalId, hostSessionId: host.props.hostSessionId, client: host.client, hostConnected: true, session,
     })),
   ];
   return terminals.map(terminal => () => renderer.update(
@@ -1247,6 +1253,7 @@ describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
           key: 'target-2',
           hostSessionId: host.props.hostSessionId,
           client: host.client,
+          hostConnected: true,
           session: terminalB,
         },
       ];
