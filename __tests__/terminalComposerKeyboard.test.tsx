@@ -532,14 +532,18 @@ describe.each(['android', 'ios'] as const)(
       mount({ simpleChat: true, chatViewEnabled: true, sessionChromeInset: 55, renderViewportOverlay });
       expect(renderer.root.findAllByProps({ className: 'absolute inset-x-0 bottom-0 z-30' })).toHaveLength(0);
       expect(ui('MessageComposer').props.compact).toBe(true);
-      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(34);
-      act(() => { ui('MessageComposer').parent?.props.onLayout({ nativeEvent: { layout: { height: 68 } } }); });
+      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(0);
+      expect(ui('MessageComposer').parent?.props.style.paddingBottom).toBe(42);
+      act(() => { ui('MessageComposer').parent?.props.onLayout({ nativeEvent: { layout: { height: 102 } } }); });
       expect(renderViewportOverlay.mock.calls.at(-1)?.[0]).toEqual({ top: 0, bottom: 102 });
       emitKeyboard(true);
       expect(ui('MessageComposer').parent?.props.style.bottom).toBe(keyboardHeight);
+      expect(ui('MessageComposer').parent?.props.style.paddingBottom).toBe(8);
+      act(() => { ui('MessageComposer').parent?.props.onLayout({ nativeEvent: { layout: { height: 68 } } }); });
       expect(renderViewportOverlay.mock.calls.at(-1)?.[0]).toEqual({ top: 0, bottom: keyboardHeight + 68 });
       emitKeyboard(false);
-      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(34);
+      expect(ui('MessageComposer').parent?.props.style.bottom).toBe(0);
+      expect(ui('MessageComposer').parent?.props.style.paddingBottom).toBe(42);
     });
 
     test('chat stays touch-enabled and scrolls before, during, and after composing', async () => {

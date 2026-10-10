@@ -144,9 +144,12 @@ export function AppShell({
   const activeChatPaneId = activeSession?.snapshot.panes.find(pane => pane.terminal_id === activeChatTerminalId)?.pane_id;
   const chatExperience = useChatExperience(chatLibrary, sessions, navigation, hosts.hosts,
     activeChatPaneId, !security.locked && !hosts.editorProfile);
-  const fullscreenVisible = immersiveTerminal
+  // Chat keeps the system indicators beside the camera cutout and its title
+  // below the top safe area, even when terminals normally use fullscreen.
+  const chatSessionVisible = terminalVisible && navigation.state.lastNonTerminalTab === 'chats';
+  const fullscreenVisible = !chatSessionVisible && (immersiveTerminal
     ? activeTerminalVisible && terminalPreferences.fullscreen
-    : fullscreenApp;
+    : fullscreenApp);
 
   const openAgentFiles = (sessionId: string, paneId: string) => {
     const pane = sessions.presentationSessions

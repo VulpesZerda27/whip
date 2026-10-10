@@ -577,7 +577,10 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     const composerKeyboardEnabled = composeOpen && keyboardEnabled;
     const keyboardControlDisabled = status !== 'connected' && !composeOpen;
     const keyboardControlSelected = keyboardEnabled && !keyboardControlDisabled;
-    const effectiveControlBarHeight = simpleChat ? (keyboardInset > 0 ? 0 : bottomSafeAreaInset) : controlBarHeight;
+    // The chat composer owns the bottom safe area so scrollback cannot show
+    // through beneath it. Its measured height includes that opaque padding.
+    const composerSafeAreaPadding = simpleChat && keyboardInset === 0 ? bottomSafeAreaInset : 0;
+    const effectiveControlBarHeight = simpleChat ? 0 : controlBarHeight;
     const sessionChromeVisible = !simpleChat && shouldShowTerminalSessionChrome({
       keyboardVisible,
     });
@@ -2406,6 +2409,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                 className={cn('absolute inset-x-0 border-t p-2', simpleChat ? 'border-border bg-background' : 'border-terminal-divider bg-transparent')}
                 style={{
                   bottom: composerBottom,
+                  ...(simpleChat ? { paddingBottom: 8 + composerSafeAreaPadding } : {}),
                 }}
                 onLayout={event => {
                   const height = Math.round(event.nativeEvent.layout.height);

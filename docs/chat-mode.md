@@ -71,6 +71,9 @@ working and **Reconnect** when offline. Stop sends Escape to the selected agent.
 The header's **Conversation options** menu contains **Read aloud** and **Open terminal**.
 Simple chat has no back arrow or terminal shortcut bar; use the system back gesture.
 A single input row grows as you type, with attachment, voice and send controls.
+Its opaque background extends through the bottom gesture area so scrolled messages
+cannot peek out underneath. Chat keeps the system status bar beside the camera
+cutout, with the title below the top safe area, even with fullscreen terminals enabled.
 Prompt timestamps and response duration/copy footers are hidden; text remains selectable.
 
 Live questions and approval menus appear below the latest response. Choose an
