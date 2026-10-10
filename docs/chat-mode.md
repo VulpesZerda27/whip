@@ -49,9 +49,8 @@ the app.
 
 **Favorite projects** restores launch settings for a new conversation. Existing
 workspaces are reused when they still match the saved workspace or directory.
-**Resume last chat** reconnects the saved server and opens the same running agent.
-The **Open on launch** switch enables automatic resume after startup reconnection;
-offline servers leave you on Chats with a manual resume option.
+The app opens the Chats list without automatically selecting a conversation.
+Tap a chat to open it; selecting an offline chat reconnects its saved server.
 
 Unsent composer drafts are saved per server and terminal and restored after an
 app restart. Saving failures are shown in chat. This is draft persistence, not a
@@ -162,6 +161,20 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.10 removes Resume last chat and Open on launch, including startup
+behavior and stored-preference handling. All 202 Jest suites (2,292 tests),
+TypeScript, changed-file ESLint, the app-version check and the signed ARM64
+release build pass. Regression tests verify that old enabled resume settings
+cannot open a conversation at startup or on foregrounding, while explicit chat
+selection and offline reconnection still work. The release installs over 1.8.9
+on the Android emulator, opens without runtime errors, and shows the Chats list
+without either resume control after relaunch. The emulator had no saved servers;
+saved-preference migration is covered by the regression tests.
+
+The shared Codex daemon association issue was investigated separately; see
+[the findings and proposed design](codex-shared-daemon-investigation.md).
+No daemon integration changes are included in 1.8.10.
 
 Version 1.8.9 passes all 202 Jest suites (2,292 tests), TypeScript, changed-file
 ESLint, the app-version check and the signed ARM64 release build. An Android

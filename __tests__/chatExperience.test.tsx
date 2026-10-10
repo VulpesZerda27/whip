@@ -3,7 +3,7 @@ import { useChatExperience } from '../src/hooks/useChatExperience';
 import type { ChatLibraryController } from '../src/hooks/useChatLibrary';
 import type { SessionRuntimeController } from '../src/hooks/useSessionRuntimeManager';
 import type { AppNavigationController } from '../src/hooks/useAppNavigation';
-import { emptyChatLibrary, chatKey } from '../src/services/chatLibrary';
+import { emptyChatLibrary, chatKey, parseChatLibrary } from '../src/services/chatLibrary';
 import { chatFingerprint } from '../src/lib/chatInbox';
 import { AppState } from 'react-native';
 
@@ -22,9 +22,9 @@ jest.mock('react-native', () => ({
 }));
 let renderer: ReactTestRenderer;
 let controller: ReturnType<typeof useChatExperience>;
-const recent = { hostId: 'server-b', paneId: 'pane-b', label: 'Website' };
+const target = { hostId: 'server-b', paneId: 'pane-b' };
 
-function setup(resume = true) {
+function setup() {
   const agent = {
     pane_id: 'pane-b',
     terminal_id: 'terminal-b',
@@ -62,8 +62,6 @@ function setup(resume = true) {
     value: {
       ...emptyChatLibrary,
       activity: {},
-      lastChat: recent,
-      resumeOnLaunch: resume,
     },
     loaded: true,
     error: null,
@@ -97,33 +95,40 @@ afterEach(() => {
   mockListeners.clear();
 });
 
-test('startup resumes the exact remembered server and pane in chat mode', () => {
-  const { Harness, sessions, navigation, agent } = setup();
+test('legacy auto-resume settings never open a conversation during startup or foregrounding', () => {
+  AppState.currentState = 'background';
+  const { Harness, sessions, library, navigation } = setup();
+  library.value = parseChatLibrary(JSON.stringify({
+    ...emptyChatLibrary,
+    lastChat: { ...target, label: 'Website' },
+    resumeOnLaunch: true,
+  }));
+  sessions.restoreComplete = false;
+  act(() => { renderer = create(<Harness />); });
+  sessions.restoreComplete = true;
+  act(() => { renderer.update(<Harness />); });
   act(() => {
-    renderer = create(<Harness />);
-  });
-  expect(sessions.openPaneTerminal).toHaveBeenCalledWith(
-    'session-b',
-    agent,
-    true,
-  );
-  expect(navigation.showChat).toHaveBeenCalledTimes(1);
-});
-test('resume preference can disable automatic reopening', () => {
-  const { Harness, sessions } = setup(false);
-  act(() => {
-    renderer = create(<Harness />);
+    for (const listener of mockListeners) listener('active');
   });
   expect(sessions.openPaneTerminal).not.toHaveBeenCalled();
+  expect(sessions.connectSavedHost).not.toHaveBeenCalled();
+  expect(navigation.showChat).not.toHaveBeenCalled();
 });
-test('resuming an offline conversation reconnects its server before opening it', async () => {
-  const { Harness, sessions, session, navigation } = setup(false);
+test('selecting a chat still opens its exact server and pane', async () => {
+  const { Harness, sessions, navigation, agent } = setup();
+  act(() => { renderer = create(<Harness />); });
+  await act(async () => { await controller.open(target); });
+  expect(sessions.openPaneTerminal).toHaveBeenCalledWith('session-b', agent, true);
+  expect(navigation.showChat).toHaveBeenCalledTimes(1);
+});
+test('selecting an offline conversation reconnects its server before opening it', async () => {
+  const { Harness, sessions, session, navigation } = setup();
   session.connectionStatus = 'error';
   act(() => {
     renderer = create(<Harness />);
   });
   await act(async () => {
-    await controller.open(recent);
+    await controller.open(target);
   });
   expect(sessions.connectSavedHost).toHaveBeenCalledWith(
     expect.objectContaining({ id: 'server-b' }),
@@ -132,7 +137,7 @@ test('resuming an offline conversation reconnects its server before opening it',
   expect(navigation.showChat).toHaveBeenCalledTimes(1);
 });
 test('a slow reconnect cannot hijack navigation or open a second chat', async () => {
-  const { Harness, sessions, session, navigation } = setup(false);
+  const { Harness, sessions, session, navigation } = setup();
   session.connectionStatus = 'error';
   let finish!: () => void;
   sessions.connectSavedHost.mockImplementation(
@@ -149,8 +154,8 @@ test('a slow reconnect cannot hijack navigation or open a second chat', async ()
   });
   let pending!: Promise<void>;
   await act(async () => {
-    pending = controller.open(recent);
-    await controller.open(recent);
+    pending = controller.open(target);
+    await controller.open(target);
   });
   expect(sessions.connectSavedHost).toHaveBeenCalledTimes(1);
   navigation.state = { tab: 'hosts', lastNonTerminalTab: 'hosts' };
@@ -165,7 +170,7 @@ test('a slow reconnect cannot hijack navigation or open a second chat', async ()
 });
 test('responses arriving while the phone is locked remain unread until returning to chat', () => {
   AppState.currentState = 'background';
-  const { Harness, library, navigation, agent } = setup(false);
+  const { Harness, library, navigation, agent } = setup();
   navigation.state = { tab: 'terminal', lastNonTerminalTab: 'chats' };
   act(() => {
     renderer = create(<Harness />);

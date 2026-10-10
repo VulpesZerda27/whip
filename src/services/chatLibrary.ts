@@ -10,10 +10,9 @@ export interface ChatFavorite extends ChatLaunchOptions {
   directory: string;
   workspaceId: string;
 }
-export interface RecentChat {
+export interface ChatTarget {
   hostId: string;
   paneId: string;
-  label: string;
 }
 export interface ChatActivity {
   fingerprint: string;
@@ -22,14 +21,10 @@ export interface ChatActivity {
 }
 export interface ChatLibrary {
   favorites: ChatFavorite[];
-  lastChat: RecentChat | null;
-  resumeOnLaunch: boolean;
   activity: Record<string, ChatActivity>;
 }
 export const emptyChatLibrary: ChatLibrary = {
   favorites: [],
-  lastChat: null,
-  resumeOnLaunch: true,
   activity: {},
 };
 export const chatKey = (hostId: string, paneId: string) =>
@@ -58,14 +53,6 @@ export function parseChatLibrary(raw: string | null): ChatLibrary {
         )
         .slice(0, 30)
     : [];
-  const recent = value.lastChat;
-  const lastChat =
-    recent &&
-    ['hostId', 'paneId', 'label'].every(
-      key => typeof recent[key as keyof RecentChat] === 'string',
-    )
-      ? { hostId: recent.hostId, paneId: recent.paneId, label: recent.label }
-      : null;
   const activity = Object.fromEntries(
     Object.entries(value.activity ?? {})
       .filter(([, item]) => {
@@ -81,9 +68,7 @@ export function parseChatLibrary(raw: string | null): ChatLibrary {
   ) as Record<string, ChatActivity>;
   return {
     favorites,
-    lastChat,
     activity,
-    resumeOnLaunch: value.resumeOnLaunch !== false,
   };
 }
 export async function loadChatLibrary(): Promise<ChatLibrary> {

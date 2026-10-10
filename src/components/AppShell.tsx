@@ -324,8 +324,7 @@ export function AppShell({
                     <ChatsScreen
                       library={chatLibrary}
                       onOpenChat={chatExperience.open}
-                      resumeError={chatExperience.error}
-                      resuming={chatExperience.resuming}
+                      openError={chatExperience.error}
                       hosts={hosts.hosts}
                       sessions={sessions}
                       onManageHosts={() => navigation.selectTab('hosts')}

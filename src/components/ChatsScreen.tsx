@@ -37,7 +37,7 @@ import {
   chatKey,
   emptyChatLibrary,
   type ChatFavorite,
-  type RecentChat,
+  type ChatTarget,
 } from '../services/chatLibrary';
 import { chatNeedsAttention } from '../lib/chatInbox';
 import { chatStatusPriority } from '../lib/chatInbox';
@@ -55,9 +55,8 @@ interface Props {
   onManageHosts: () => void;
   onShowChats: () => void;
   library?: ChatLibraryController;
-  onOpenChat?: (target: RecentChat) => Promise<void>;
-  resumeError?: string | null;
-  resuming?: boolean;
+  onOpenChat?: (target: ChatTarget) => Promise<void>;
+  openError?: string | null;
 }
 
 export function ChatsScreen({
@@ -67,8 +66,7 @@ export function ChatsScreen({
   onShowChats,
   library,
   onOpenChat,
-  resumeError,
-  resuming = false,
+  openError,
 }: Props) {
   const { colors } = useTheme();
   const { bottom } = useSafeAreaInsets();
@@ -460,50 +458,13 @@ export function ChatsScreen({
         contentContainerStyle={{ paddingBottom: bottomNavigationInset(bottom) }}
         className="flex-1 px-5"
       >
-        {library?.error || resumeError ? (
+        {library?.error || openError ? (
           <Text
             accessibilityRole="alert"
             className="mb-3 text-sm text-destructive"
           >
-            {library?.error || resumeError}
+            {library?.error || openError}
           </Text>
-        ) : null}
-        {saved.lastChat && onOpenChat ? (
-          <View className="mb-5 gap-2">
-            <Button
-              accessibilityLabel="Resume last chat"
-              variant="secondary"
-              disabled={resuming}
-              className="h-auto flex-col items-start rounded-2xl p-4"
-              onPress={() => {
-                void onOpenChat(saved.lastChat!);
-              }}
-            >
-              <Text className="font-semibold">
-                {resuming ? 'Reconnecting…' : 'Resume last chat'}
-              </Text>
-              <Text className="text-sm text-muted-foreground" numberOfLines={1}>
-                {saved.lastChat.label} · {serverLabel(saved.lastChat.hostId)}
-              </Text>
-            </Button>
-            <Button
-              variant="ghost"
-              className="self-start"
-              accessibilityLabel="Resume last chat on launch"
-              accessibilityRole="switch"
-              accessibilityState={{ checked: saved.resumeOnLaunch }}
-              onPress={() =>
-                library?.update(previous => ({
-                  ...previous,
-                  resumeOnLaunch: !previous.resumeOnLaunch,
-                }))
-              }
-            >
-              <Text className="text-xs text-muted-foreground">
-                Open on launch: {saved.resumeOnLaunch ? 'On' : 'Off'}
-              </Text>
-            </Button>
-          </View>
         ) : null}
         {saved.favorites.length > 0 ? (
           <View className="mb-5 gap-2">
@@ -597,7 +558,6 @@ export function ChatsScreen({
                   void onOpenChat({
                     hostId: agentSession.hostId,
                     paneId: agent.pane_id,
-                    label: tab?.label || agent.agent || 'Conversation',
                   });
                 else sessions.openAgentTerminal(agentSession.id, agent);
               }}

@@ -53,7 +53,7 @@ test('a delayed write cannot resurrect a draft after it is sent or cleared', asy
   expect(await new ComposerDraftStorage().load('a')).toEqual({});
 });
 
-test('favorite settings and resume preference survive serialization; invalid providers are excluded', () => {
+test('legacy resume settings are discarded while favorites and activity survive', () => {
   const favorite = {
     id: '1',
     label: 'Project',
@@ -68,11 +68,15 @@ test('favorite settings and resume preference survive serialization; invalid pro
     JSON.stringify({
       ...emptyChatLibrary,
       favorites: [favorite, { ...favorite, provider: 'unknown' }],
-      resumeOnLaunch: false,
+      lastChat: { hostId: 'a', paneId: 'pane', label: 'Old conversation' },
+      resumeOnLaunch: true,
+      activity: { chat: { fingerprint: 'done', seen: '', updatedAt: 1 } },
     }),
   );
   expect(parsed.favorites).toEqual([favorite]);
-  expect(parsed.resumeOnLaunch).toBe(false);
+  expect(parsed).not.toHaveProperty('resumeOnLaunch');
+  expect(parsed).not.toHaveProperty('lastChat');
+  expect(parsed.activity.chat).toEqual({ fingerprint: 'done', seen: '', updatedAt: 1 });
   expect(chatKey('a:b', 'c')).not.toBe(chatKey('a', 'b:c'));
 });
 
