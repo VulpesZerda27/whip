@@ -1,5 +1,5 @@
 import { BlurView } from 'expo-blur';
-import { CircleEllipsis, Server, SquareTerminal, type LucideIcon } from 'lucide-react-native';
+import { CircleEllipsis, MessageCircle, Server, SquareTerminal, type LucideIcon } from 'lucide-react-native';
 import { type RefObject } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +24,7 @@ type NavigationItem = {
 } & ({ icon: LucideIcon } | { herdrMark: true });
 
 const items: NavigationItem[] = [
+  { tab: 'chats', labelKey: 'nav.chats', icon: MessageCircle },
   { tab: 'hosts', labelKey: 'nav.hosts', icon: Server },
   { tab: 'herd', labelKey: 'nav.herd', herdrMark: true },
   { tab: 'terminal', labelKey: 'nav.terminal', icon: SquareTerminal },

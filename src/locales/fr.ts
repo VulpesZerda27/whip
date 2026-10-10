@@ -46,6 +46,7 @@ export const fr = {
   'markdown.a11y.links': 'Liens',
   'markdown.a11y.images': 'Images',
 
+  'nav.chats': 'Discussions',
   'nav.hosts': 'Hôtes',
   'nav.herd': 'Troupeau',
   'nav.terminal': 'Terminal',

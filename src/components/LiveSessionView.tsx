@@ -18,6 +18,7 @@ import type { PaneInfo } from '../types';
 import { SessionScreen } from './SessionScreen';
 
 interface Props {
+  preferChat?: boolean;
   composerDraftRequest?: ComposerDraftRequest;
   onComposerDraftConsumed?: (id: number) => void;
   session: SessionPresentation;
@@ -68,6 +69,7 @@ interface Props {
 
 /** Adapts one application-level live host into SessionScreen's local contract. */
 export function LiveSessionView({
+  preferChat,
   composerDraftRequest,
   onComposerDraftConsumed,
   session,
@@ -131,6 +133,7 @@ export function LiveSessionView({
 
   return (
     <SessionScreen
+      preferChat={preferChat}
       composerDraftRequest={composerDraftRequest}
       onComposerDraftConsumed={onComposerDraftConsumed}
       hostId={session.hostId}

@@ -23,13 +23,15 @@ let navigation: AppNavigationController | null = null;
 
 function NavigationHarness({
   onFirstTabMounted,
+  preferredTab = 'hosts',
 }: {
   onFirstTabMounted: () => void;
+  preferredTab?: 'hosts' | 'terminal';
 }) {
   navigation = useAppNavigation({
     appReady: true,
     preferencesLoaded: true,
-    preferredTab: 'hosts',
+    preferredTab,
     recordLastTab: jest.fn(),
     dismissTopOverlay: () => false,
     onFirstTabMounted,
@@ -44,6 +46,11 @@ describe('useAppNavigation', () => {
     act(() => renderer?.unmount());
     navigation = null;
     jest.clearAllMocks();
+  });
+
+  test('returns to Chats when reopening after a conversation', () => {
+    act(() => { renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} preferredTab="terminal" />); });
+    expect(navigation?.state.tab).toBe('chats');
   });
 
   test('notifies once after the first tab mounts when performance tracing is disabled', () => {

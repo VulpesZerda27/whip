@@ -1,6 +1,6 @@
 import { evaluateAppUpdate, type AppUpdateCheck } from 'react-native-whip-ssh';
 
-const WHIP_GITHUB_REPOSITORY = 'kosumic/whip';
+const WHIP_GITHUB_REPOSITORY = 'VulpesZerda27/whip';
 export const WHIP_REPOSITORY_URL = `https://github.com/${WHIP_GITHUB_REPOSITORY}`;
 export const WHIP_RELEASES_URL = `${WHIP_REPOSITORY_URL}/releases`;
 export const WHIP_LATEST_RELEASE_URL = `${WHIP_RELEASES_URL}/latest`;

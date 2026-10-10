@@ -4,6 +4,7 @@ import {
   forwardRef,
   useCallback,
   useEffect,
+  useEffectEvent,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -157,6 +158,7 @@ import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
 const TERMINAL_INPUT_CONTEXT = 'terminal-input-send';
 
 interface Props {
+  simpleChat?: boolean;
   onResidencyEnd?: TerminalResidencyEnd;
   activeTarget: TerminalRenderTarget | null;
   targets: readonly TerminalRenderTarget[];
@@ -436,6 +438,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       onRequestLinks,
       chatControl,
       chatViewEnabled,
+      simpleChat = false,
       renderViewportOverlay,
       viewportOverlayBackground,
       onOpenLink,
@@ -1439,6 +1442,17 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
         });
     };
 
+    const openSimpleComposer = useEffectEvent(() => {
+      keyboardEnabledBeforeComposeRef.current = keyboardEnabled;
+      renderer.current?.blur();
+      setKeyboardEnabled(true);
+      setComposeOpen(true);
+      reportBackgroundFailure(setTerminalKeyboardOverlay(terminalId, true), 'chat-composer-open');
+    });
+    useEffect(() => {
+      if (simpleChat && visible) openSimpleComposer();
+    }, [simpleChat, visible, terminalId]);
+
     const expandCompose = () => {
       renderer.current?.blur();
       setKeyboardEnabled(true);
@@ -1507,6 +1521,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
           ),
         ).historyEntry
       ) {
+        if (simpleChat) return false;
         reportBackgroundFailure(sendInput(ENTER_INPUT), TERMINAL_INPUT_CONTEXT);
         return false;
       }
@@ -2074,7 +2089,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       pasteTargetKey: activeTarget?.key,
       onImagePaste: pasteComposerImage,
       onImagePasteError: (pasteError: Error) => setError(pasteError.message),
-      autoFocus: keyboardEnabled,
+      autoFocus: keyboardEnabled && !simpleChat,
       showSoftInputOnFocus: keyboardEnabled,
       multiline: true,
       textAlignVertical: 'top',
@@ -2404,7 +2419,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                   glass={appGlassEnabled}
                   inputRef={composeInputRef}
                   numberOfLines={3}
-                  inputClassName="h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px] text-terminal-text"
+                  inputClassName={simpleChat ? 'h-[96px] px-4 py-3 text-base leading-6 text-terminal-text' : 'h-[76px] px-4 py-3 font-mono text-[12px] leading-[17px] text-terminal-text'}
                   surfaceClassName={cn(
                     'rounded-[38px]',
                     !appGlassEnabled &&
@@ -2422,7 +2437,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
                     },
                     onExpand: expandCompose,
                     onSend: submitCompose,
-                    sendDisabled: imagePastePending,
+                    sendDisabled: imagePastePending || (simpleChat && !ready),
                     sending: imagePastePending,
                     sendClassName: 'bg-white',
                     sendColor: colors.ink,
@@ -2459,6 +2474,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             contentContainerStyle={{ paddingBottom: 7 + bottomSafeAreaInset }}
           >
             {controlOrder
+              .filter(control => !simpleChat || ['keyboard', 'compose', 'chat', 'esc', 'find'].includes(control))
               .filter(control =>
                 terminalControlIsVisible(
                   control,

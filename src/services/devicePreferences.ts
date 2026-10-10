@@ -117,8 +117,8 @@ export const defaultDevicePreferences: DevicePreferences = {
   language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
-  agentCommand: 'opencode',
-  lastTab: 'hosts',
+  agentCommand: 'codex',
+  lastTab: 'chats',
   terminal: {
     fullscreen: true,
     useModifierKeyIcons: false,
@@ -374,7 +374,7 @@ function parseXtermCacheCapacity(value: unknown): number {
 }
 
 function isAppTab(value: unknown): value is AppTab {
-  return value === 'hosts' || value === 'herd' || value === 'terminal' || value === 'more';
+  return value === 'chats' || value === 'hosts' || value === 'herd' || value === 'terminal' || value === 'more';
 }
 
 function isAppearancePreference(value: unknown): value is AppearancePreference {

@@ -62,7 +62,7 @@ test('checks only on demand and offers the GitHub release for a newer version', 
   expect(fetchMock).not.toHaveBeenCalled();
   await press();
   expect(fetchMock).toHaveBeenCalledWith(
-    'https://api.github.com/repos/kosumic/whip/releases/latest',
+    'https://api.github.com/repos/VulpesZerda27/whip/releases/latest',
     expect.objectContaining({ cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } }),
   );
   expect(evaluateAppUpdate).toHaveBeenCalledWith('1.7.6', releaseJson);

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Whip",
+    "name": "Whip Chat",
     "slug": "herdr-remote",
     "icon": "./assets/icon.png",
     "scheme": "whip",
@@ -69,7 +69,7 @@
         "ACCESS_NETWORK_STATE"
       ],
       "allowBackup": true,
-      "package": "io.github.kaminarios.whip"
+      "package": "io.github.vulpeszerda27.whipchat"
     },
     "web": {
       "bundler": "metro"

@@ -43,6 +43,7 @@ export const zhHans = {
   'markdown.a11y.headings': '标题',
   'markdown.a11y.links': '链接',
   'markdown.a11y.images': '图片',
+  'nav.chats': '聊天',
   'nav.hosts': '主机',
   'nav.herd': 'Herd',
   'nav.terminal': '终端',

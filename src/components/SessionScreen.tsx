@@ -142,6 +142,7 @@ import { AgentChatView } from './AgentChatView';
 import { useAppGlassEnabled } from './GlassSurface';
 
 interface Props {
+  preferChat?: boolean;
   hostId: string;
   hostSessionId: string;
   visible: boolean;
@@ -196,6 +197,7 @@ interface BrowserWebViewHandle {
 const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
 
 export function SessionScreen({
+  preferChat = false,
   hostId,
   hostSessionId,
   visible,
@@ -365,7 +367,7 @@ export function SessionScreen({
   const panes = selectableResources.panes.filter(
     item => item.tab_id === selectedTab?.tab_id,
   );
-  const sessionChromeInset = terminalSessionChromeHeight(panes.length);
+  const sessionChromeInset = terminalSessionChromeHeight(preferChat ? 1 : panes.length);
   const serverWorkspace =
     snapshot.workspaces.find(item => item.focused) || snapshot.workspaces[0];
   const serverTab =
@@ -1342,7 +1344,7 @@ export function SessionScreen({
   const openAgentChat = () => {
     if (!client) return openSavedChat();
     if (activeChatView && chatPresentationRequested(activeChatView.presentation)) return;
-    if (activeTarget && activeChatView) {
+    if (activeTarget && (activeChatView || preferChat)) {
       try {
         const projection = agentTranscriptService.reconcile(
           activeTarget.hostSessionId, activeTarget.session.terminalId, activeTarget.client.native,
@@ -1350,7 +1352,7 @@ export function SessionScreen({
         if (projection.type === 'bound' && agentTranscriptReadiness(projection.state) !== 'failed') {
           const generation = nextChatPresentationGeneration();
           const presentation = requestChatPresentation(
-            projection.binding.bindingToken === activeChatView.binding.bindingToken
+            activeChatView?.binding.bindingToken === projection.binding.bindingToken
               ? updateChatTranscriptReadiness(
                   activeChatView.presentation,
                   agentTranscriptReadiness(projection.state),
@@ -1371,6 +1373,24 @@ export function SessionScreen({
     }
     return chatOpen.open();
   };
+
+  const automaticChatTarget = useRef<string | null>(null);
+  const openPreferredChat = useEffectEvent(() => {
+    reportBackgroundFailure(Promise.resolve(openAgentChat()), 'preferred-chat-open');
+  });
+  const preferredAgent = chatAgentForPane(activePane);
+  const preferredTarget = activePane && preferredAgent
+    ? `${hostSessionId}:${activePane.pane_id}:${activePane.agent_session?.value || preferredAgent}`
+    : null;
+  useEffect(() => {
+    if (!visible || !preferChat) {
+      automaticChatTarget.current = null;
+      return;
+    }
+    if (!preferredTarget || (client && !activeTarget) || automaticChatTarget.current === preferredTarget || busy) return;
+    automaticChatTarget.current = preferredTarget;
+    openPreferredChat();
+  }, [activeTarget, busy, client, preferChat, preferredTarget, visible]);
 
   return (
     <View
@@ -1402,7 +1422,7 @@ export function SessionScreen({
           style={terminalSessionChrome.visible ? undefined : { display: 'none' }}
         >
           <Button
-            accessibilityLabel={t('session.backToHerd')}
+            accessibilityLabel={preferChat ? 'Back to Chats' : t('session.backToHerd')}
             className={cn(
               'h-[55px] items-center justify-center rounded-none px-0 py-0',
               Platform.OS === 'ios' ? 'w-14' : 'w-[42px]',
@@ -1416,7 +1436,12 @@ export function SessionScreen({
               color={colors.text}
             />
           </Button>
-          {workspace ? (
+          {preferChat && chatVisible ? (
+            <View className="min-w-0 flex-1 justify-center px-3">
+              <Text className="text-base font-semibold" numberOfLines={1}>{selectedTab?.label || 'Conversation'}</Text>
+              <Text className="text-xs text-muted-foreground" numberOfLines={1}>{preferredAgent ? chatAgentDisplayName(preferredAgent) : ''} · {workspace?.label || 'Workspace'}</Text>
+            </View>
+          ) : workspace ? (
             <>
               <ScrollView
                 className="min-w-0 flex-1"
@@ -1589,7 +1614,7 @@ export function SessionScreen({
           </ResourceEditorField>
         </ResourceEditorSheet>
 
-        {terminalSessionChrome.visible && selectedTab && panes.length > 1 && (
+        {!preferChat && terminalSessionChrome.visible && selectedTab && panes.length > 1 && (
           <View className="h-11 flex-row border-b border-border bg-transparent">
             <ScrollView
               horizontal
@@ -1662,6 +1687,7 @@ export function SessionScreen({
       >
         <View pointerEvents="box-none" className="absolute inset-0">
           <TerminalScreen
+            simpleChat={preferChat && chatVisible}
             onResidencyEnd={onTerminalResidencyEnd}
             activeTarget={activeTarget}
             targets={terminalTargets}

@@ -126,8 +126,8 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.biometricOnResume).toBe(false);
   expect(defaultDevicePreferences.keepScreenOn).toBe(false);
   expect(defaultDevicePreferences.reopenTerminalOnLaunch).toBe(false);
-  expect(defaultDevicePreferences.agentCommand).toBe('opencode');
-  expect(defaultDevicePreferences.lastTab).toBe('hosts');
+  expect(defaultDevicePreferences.agentCommand).toBe('codex');
+  expect(defaultDevicePreferences.lastTab).toBe('chats');
 });
 
 test('persists the spinner frame-rate choice across reloads', async () => {
@@ -139,9 +139,9 @@ test('persists the spinner frame-rate choice across reloads', async () => {
   }
 });
 
-test('opens Hosts when the saved last tab was the removed Chats tab', async () => {
+test('restores the saved Chats tab', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ lastTab: 'chats' }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({ lastTab: 'hosts' });
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ lastTab: 'chats' });
 });
 
 test('migrates the old 11px mobile default to the usable 8px geometry', async () => {
@@ -172,7 +172,7 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
-    agentCommand: 'opencode',
+    agentCommand: 'codex',
     lastTab: 'terminal',
     terminalControlUsage: {},
     terminal: {
@@ -229,7 +229,7 @@ test('loads a configured agent command and rejects blank values', async () => {
   });
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({ agentCommand: '   ' }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({ agentCommand: 'opencode' });
+  await expect(loadDevicePreferences()).resolves.toMatchObject({ agentCommand: 'codex' });
 });
 
 test('loads biometric key protection only when explicitly enabled', async () => {

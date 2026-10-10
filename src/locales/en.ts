@@ -44,6 +44,7 @@ export const en = {
   'markdown.a11y.links': 'Links',
   'markdown.a11y.images': 'Images',
 
+  'nav.chats': 'Chats',
   'nav.hosts': 'Hosts',
   'nav.herd': 'Herd',
   'nav.terminal': 'Terminal',

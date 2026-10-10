@@ -18,3 +18,9 @@ test('back returns non-host roots to hosts and leaves host root to Android', () 
   expect(handleMobileBack(herd).state.tab).toBe('hosts');
   expect(handleMobileBack(initialMobileNavigation).handled).toBe(false);
 });
+
+test('a chat conversation returns to Chats on Android back', () => {
+  const chats = selectMobileTab(initialMobileNavigation, 'chats');
+  const conversation = selectMobileTab(chats, 'terminal');
+  expect(handleMobileBack(conversation).state.tab).toBe('chats');
+});

@@ -1,5 +1,6 @@
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import * as Haptics from 'expo-haptics';
+import { NativeModules } from 'react-native';
 
 import { ComposerInput, MessageComposer } from '../src/components/MessageComposer';
 import { watchComposerImagePaste } from '../src/services/composerImagePaste';
@@ -16,6 +17,9 @@ jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
 jest.mock('react-native', () => ({
+  NativeModules: { WhipDictation: { recognize: jest.fn() } },
+  Platform: { OS: 'android' },
+  Alert: { alert: jest.fn() },
   ActivityIndicator: 'ActivityIndicator',
   findNodeHandle: () => 42,
   View: 'View',
@@ -69,6 +73,31 @@ describe('MessageComposer glass controls', () => {
 
   beforeEach(() => jest.clearAllMocks());
   afterEach(() => act(() => renderer?.unmount()));
+
+  test('dictation updates the draft without sending it', async () => {
+    const onText = jest.fn();
+    NativeModules.WhipDictation.recognize.mockResolvedValueOnce('the build');
+    act(() => { renderer = create(<MessageComposer actions={actions} initialValue="Check" pasteTargetKey="one" onChangeText={onText} />); });
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: 'Record voice message' }).props.onPress(); });
+    expect(onText).toHaveBeenCalledWith('Check the build');
+    expect(actions.onSend).not.toHaveBeenCalled();
+  });
+
+  test.each(['switch', 'unmount'])('drops a late voice result after %s', async change => {
+    let finish!: (text: string) => void;
+    NativeModules.WhipDictation.recognize.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const onText = jest.fn();
+    act(() => { renderer = create(<MessageComposer actions={actions} initialValue="" pasteTargetKey="one" onChangeText={onText} />); });
+    let recording!: Promise<void>;
+    act(() => { recording = renderer.root.findByProps({ accessibilityLabel: 'Record voice message' }).props.onPress(); });
+    act(() => {
+      if (change === 'switch') renderer.update(<MessageComposer actions={actions} initialValue="" pasteTargetKey="two" onChangeText={onText} />);
+      else renderer.unmount();
+    });
+    await act(async () => { finish('hello'); await recording; });
+    expect(onText).not.toHaveBeenCalled();
+    expect(actions.onSend).not.toHaveBeenCalled();
+  });
 
   test.each([true, false])('only confirms an accepted send (accepted=%s)', accepted => {
     actions.onSend.mockImplementationOnce(() => {

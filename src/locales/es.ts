@@ -43,6 +43,7 @@ export const es = {
   'markdown.a11y.headings': 'Encabezados',
   'markdown.a11y.links': 'Enlaces',
   'markdown.a11y.images': 'Imágenes',
+  'nav.chats': 'Chats',
   'nav.hosts': 'Hosts',
   'nav.herd': 'Herd',
   'nav.terminal': 'Terminal',

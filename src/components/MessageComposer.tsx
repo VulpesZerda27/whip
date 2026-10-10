@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, type ReactNode, type Ref } from 'react';
-import { Maximize2, Paperclip, Send, X } from 'lucide-react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { Maximize2, Mic, Paperclip, Send, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
+  Alert,
   findNodeHandle,
   View,
   type ColorValue,
@@ -20,6 +21,7 @@ import { appGlassControlStyle, useTheme } from '../theme';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { appendDictation, recordVoiceMessage, voiceDictationAvailable } from '../services/voiceDictation';
 
 type ComposerInputProps = Omit<React.ComponentProps<typeof Input>, 'defaultValue' | 'value'> & {
   initialValue: string;
@@ -136,6 +138,40 @@ export function MessageComposer({
   ...inputProps
 }: MessageComposerProps) {
   const { colors } = useTheme();
+  const [recording, setRecording] = useState(false);
+  const recordingRef = useRef(false);
+  const localInput = useRef<TextInputHandle | null>(null);
+  const latestInput = useRef(inputProps);
+  latestInput.current = inputProps;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
+  const bindInput = useCallback((handle: TextInputHandle | null) => {
+    localInput.current = handle;
+    if (typeof inputRef === 'function') inputRef(handle);
+    else if (inputRef) inputRef.current = handle;
+  }, [inputRef]);
+  const dictate = async () => {
+    if (recordingRef.current) return;
+    const target = inputProps.pasteTargetKey;
+    recordingRef.current = true;
+    setRecording(true);
+    try {
+      const transcript = await recordVoiceMessage();
+      if (!mounted.current || latestInput.current.pasteTargetKey !== target || !transcript) return;
+      const text = appendDictation(latestInput.current.initialValue, transcript);
+      latestInput.current.onChangeText?.(text);
+      localInput.current?.setNativeProps({ text });
+      localInput.current?.setSelection(text.length, text.length);
+    } catch (error) {
+      if (mounted.current) Alert.alert('Voice recording unavailable', String(error));
+    } finally {
+      recordingRef.current = false;
+      if (mounted.current) setRecording(false);
+    }
+  };
   const actionStyle = glass
     ? { borderColor: appGlassControlStyle(false, colors).borderColor }
     : undefined;
@@ -149,7 +185,7 @@ export function MessageComposer({
       {beforeInput}
       <ComposerInput
         {...inputProps}
-        ref={inputRef}
+        ref={bindInput}
         className={cn('rounded-none border-0 bg-transparent shadow-none', inputClassName)}
       />
     </>
@@ -157,6 +193,17 @@ export function MessageComposer({
   return (
     <View className={cn('min-w-0 flex-row items-end gap-2', className)}>
       <View className="gap-1.5">
+        {voiceDictationAvailable ? (
+          <Button
+            accessibilityLabel={recording ? 'Recording voice message' : 'Record voice message'}
+            disabled={recording}
+            className={cn('size-10 rounded-full px-0', actions.actionClassName)}
+            variant="secondary"
+            onPress={dictate}
+          >
+            {recording ? <ActivityIndicator size="small" color={actionColor} /> : <Mic size={18} color={actionColor} />}
+          </Button>
+        ) : null}
         <Button
           accessibilityLabel={actions.attachLabel}
           className={cn(

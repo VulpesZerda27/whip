@@ -631,6 +631,15 @@ function addCachePressure(host: ReturnType<typeof setup>) {
 }
 
 describe.each(['codex', 'opencode'] as const)('%s SessionScreen', agent => {
+  test('chat-first entry requests the transcript without a toolbar tap', async () => {
+    const host = setup(agent);
+    const binding = bindChat(host, agent);
+    host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: binding.state }));
+    await act(async () => { renderer = create(<SessionScreen {...host.props} preferChat />); });
+    expect(control().loading).toBe(true);
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+  });
+
   test.each(['hidden', 'background', 'ssh', 'shell', 'no-target'] as const)('does not preload an ineligible %s terminal', async reason => {
     const host = setup(agent);
     bindChat(host, agent);

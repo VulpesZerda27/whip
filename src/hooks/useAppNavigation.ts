@@ -97,7 +97,7 @@ export function useAppNavigation({
     setState(current =>
       selectMobileTab(
         current,
-        preferredTab === 'terminal' ? 'hosts' : preferredTab,
+        preferredTab === 'terminal' ? 'chats' : preferredTab,
       ),
     );
   }, [preferencesLoaded, preferredTab]);

@@ -43,6 +43,7 @@ export const ja = {
   'markdown.a11y.headings': '見出し',
   'markdown.a11y.links': 'リンク',
   'markdown.a11y.images': '画像',
+  'nav.chats': 'チャット',
   'nav.hosts': 'ホスト',
   'nav.herd': 'Herd',
   'nav.terminal': 'ターミナル',

@@ -47,6 +47,7 @@ import {
 } from './AppPlatformBindings';
 import { BottomNavigation } from './BottomNavigation';
 import { ConnectRequiredScreen } from './ConnectRequiredScreen';
+import { ChatsScreen } from './ChatsScreen';
 import { GlassProvider } from './GlassSurface';
 import { HerdScreen } from './HerdScreen';
 import { HostsScreen } from './HostsScreen';
@@ -303,6 +304,21 @@ export function AppShell({
                   uri={appBackgroundImageUri}
                   dimming={appBackgroundDimming}
                 />
+
+                {navigation.mountedTabs.has('chats') ? (
+                  <View
+                    importantForAccessibility={navigation.state.tab === 'chats' ? 'auto' : 'no-hide-descendants'}
+                    pointerEvents={navigation.state.tab === 'chats' ? 'auto' : 'none'}
+                    style={navigation.state.tab === 'chats' ? styles.tabScreen : styles.hiddenTab}
+                  >
+                    <ChatsScreen
+                      hosts={hosts.hosts}
+                      sessions={sessions}
+                      onManageHosts={() => navigation.selectTab('hosts')}
+                      onShowChats={() => navigation.selectTab('chats')}
+                    />
+                  </View>
+                ) : null}
 
                 {navigation.mountedTabs.has('hosts') ? (
                   <View
@@ -616,6 +632,7 @@ export function AppShell({
                 activeSession && (
                   <AgentStatusAnimationProvider enabled={terminalVisible}>
                     <LiveSessionView
+                      preferChat={navigation.state.lastNonTerminalTab === 'chats'}
                       session={activeSession}
                       client={liveClient}
                       visible={terminalVisible}
@@ -652,9 +669,10 @@ export function AppShell({
                           'tab-alert-dismiss',
                         );
                       }}
-                      onExit={() =>
-                        sessions.exitTerminalToHerd(activeSession.id)
-                      }
+                      onExit={() => {
+                        if (navigation.state.lastNonTerminalTab === 'chats') navigation.selectTab('chats');
+                        else sessions.exitTerminalToHerd(activeSession.id);
+                      }}
                       onRefresh={async sessionId => {
                         if (activeSession.connectionStatus === 'ready') await sessions.refresh(sessionId);
                         else await sessions.connectSavedHost(activeSession.host);

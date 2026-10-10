@@ -43,6 +43,7 @@ export const zhHant: Record<string, string> = {
   'markdown.a11y.headings': '標題',
   'markdown.a11y.links': '連結',
   'markdown.a11y.images': '圖片',
+  'nav.chats': '聊天',
   'nav.hosts': '主機',
   'nav.herd': '代理群',
   'nav.terminal': '終端機',
