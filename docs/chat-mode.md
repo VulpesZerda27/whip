@@ -66,6 +66,9 @@ Selecting a chat explicitly resumes/subscribes to that exact thread and loads it
 full history. Merely listing chats does not resume them. Whip reconciles the initial
 snapshot against the native event cursor, replaces streaming text with completed
 items, and refreshes full history after a connection change or event-buffer overflow.
+Turn completion summaries merge items by ID without removing user messages, tools,
+or intermediate replies. Only an explicitly full turn snapshot replaces its item
+list; partial and older unmarked notifications preserve the accumulated history.
 The displayed chat stays tied to its thread even if a desktop terminal switches to
 another conversation. This does not repair upstream Herdr’s terminal-pane mapping;
 the separate Herd/Terminal surfaces still have that upstream limitation.
@@ -210,6 +213,18 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.12 fixes live Codex turns losing user messages and intermediate steps
+when a completion notification contains only a final-answer summary. All 206 Jest
+suites (2,322 tests), TypeScript, full ESLint and app-version checks pass. Regression
+coverage includes messages from another client, steering, tool steps, repeated
+summaries, empty partial notifications, older unmarked notifications, and full
+history replacement.
+The opt-in live daemon test verifies a second client's user message remains visible
+after completion without reloading, then compares the live turn's messages with
+fresh history after reconnecting. The ARM64 release build passes; APK inspection
+confirms version code 238 and the same application ID and signing certificate as
+1.8.11, allowing an update that retains app data.
 
 Version 1.8.11 passes 206 Jest suites (2,314 tests), 597 Rust unit tests, TypeScript,
 full ESLint, Clippy, app-version and license checks. Native SSH/WebSocket reads succeeded

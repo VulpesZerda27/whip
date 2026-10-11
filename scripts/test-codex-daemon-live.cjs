@@ -142,11 +142,9 @@ async function run() {
     await observer.refresh();
     await observer.open(threadId);
     observer.start();
-    await client.send(
-      threadId,
-      'Reply with exactly WHIP_DAEMON_QA_OK. Do not use tools or modify files.',
-      [],
-    );
+    const prompt =
+      'Reply with exactly WHIP_DAEMON_QA_OK. Do not use tools or modify files.';
+    await client.send(threadId, prompt, []);
     const deadline = Date.now() + 120000;
     while (Date.now() < deadline) {
       const chat = observer.snapshot.chats[threadId];
@@ -174,6 +172,30 @@ async function run() {
       )
     )
       throw new Error('Peer did not receive complete reply');
+    if (before.transcript.turns.some(t => t.status === 'working'))
+      throw new Error('Peer did not receive turn completion');
+    const expectUserMessage = (chat, stage) => {
+      const matching = chat.transcript.messages.filter(
+        m =>
+          m.role === 'user' &&
+          m.parts.some(p => p.type === 'text' && p.text === prompt),
+      );
+      if (matching.length !== 1)
+        throw new Error(`${stage}: user message was lost or duplicated`);
+    };
+    expectUserMessage(before, 'Peer after completion, before history reload');
+    const completedTurn = before.transcript.turns.find(t =>
+      t.user?.parts.some(p => p.type === 'text' && p.text === prompt),
+    );
+    const liveMessages = before.transcript.messages.filter(m =>
+      m.id.startsWith(`${completedTurn.id}:`),
+    );
+    console.log(
+      JSON.stringify({
+        check: 'peer-user-message-survives-completion',
+        passed: true,
+      }),
+    );
     await client.send(
       threadId,
       'Use a terminal tool to run sleep 20, then reply WAITED. Do not modify files.',
@@ -215,6 +237,23 @@ async function run() {
       await reconnected.refresh();
       await reconnected.open(threadId);
       const after = reconnected.snapshot.chats[threadId];
+      expectUserMessage(after, 'Peer after reconnect');
+      const restoredMessages = after.transcript.messages.filter(m =>
+        m.id.startsWith(`${completedTurn.id}:`),
+      );
+      if (
+        JSON.stringify(
+          restoredMessages.map(m => ({
+            id: m.id,
+            role: m.role,
+            parts: m.parts,
+          })),
+        ) !==
+        JSON.stringify(
+          liveMessages.map(m => ({ id: m.id, role: m.role, parts: m.parts })),
+        )
+      )
+        throw new Error('Live completed turn differs from reconnected history');
       if (
         after.transcript.messages
           .filter(m => m.role === 'assistant')

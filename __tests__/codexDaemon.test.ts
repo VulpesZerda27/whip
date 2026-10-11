@@ -145,6 +145,146 @@ test('snapshot boundary discards already included deltas, then completed items r
     text: 'Authoritative final.',
   });
 });
+
+test.each(['summary', undefined])(
+  'completion with %s items preserves live user messages, tools and intermediate replies',
+  async itemsView => {
+    const f = fixture();
+    await f.client.refresh();
+    await f.client.open('thread-a');
+    f.client.event({
+      method: 'turn/started',
+      params: {
+        threadId: 'thread-a',
+        turn: {
+          id: 'peer-turn',
+          status: 'inProgress',
+          itemsView: 'notLoaded',
+          items: [],
+        },
+      },
+    });
+    const items = [
+      {
+        id: 'peer-user',
+        type: 'userMessage',
+        content: [{ type: 'text', text: 'Sent from the workstation' }],
+      },
+      { id: 'progress', type: 'agentMessage', text: 'Checking the project.' },
+      { id: 'command', type: 'commandExecution', command: 'pwd' },
+      {
+        id: 'guidance',
+        type: 'userMessage',
+        content: [{ type: 'text', text: 'Additional guidance' }],
+      },
+      { id: 'final', type: 'agentMessage', text: 'Partial final' },
+    ];
+    for (const item of items)
+      f.client.event({
+        method: 'item/completed',
+        params: { threadId: 'thread-a', turnId: 'peer-turn', item },
+      });
+    const completion: CodexEvent = {
+      method: 'turn/completed',
+      params: {
+        threadId: 'thread-a',
+        turn: {
+          id: 'peer-turn',
+          status: 'completed',
+          itemsView,
+          items: [
+            { id: 'final', type: 'agentMessage', text: 'Complete final' },
+          ],
+        },
+      },
+    };
+    f.client.event(completion);
+    f.client.event(completion);
+
+    const transcript = f.client.snapshot.chats['thread-a'].transcript;
+    expect(transcript.messages.map(m => m.id)).toEqual([
+      'turn-a:user-a',
+      'turn-a:answer-a',
+      ...items.map(item => `peer-turn:${item.id}`),
+    ]);
+    expect(transcript.turns.map(t => t.user?.parts[0])).toEqual([
+      { id: 'user-a:0', type: 'text', text: 'Hi' },
+      { id: 'peer-user:0', type: 'text', text: 'Sent from the workstation' },
+      { id: 'guidance:0', type: 'text', text: 'Additional guidance' },
+    ]);
+    expect(transcript.messages.at(-1)?.parts).toEqual([
+      { id: 'final', type: 'text', text: 'Complete final' },
+    ]);
+    expect(transcript.turns.every(t => t.status === 'idle')).toBe(true);
+    expect(f.calls.map(c => c.payload.method)).toEqual([
+      'thread/list',
+      'thread/resume',
+    ]);
+  },
+);
+
+test.each(['notLoaded', 'summary', undefined])(
+  'an empty %s completion updates status without deleting history',
+  async itemsView => {
+    const f = fixture();
+    await f.client.refresh();
+    await f.client.open('thread-a');
+    const before = f.client.snapshot.chats['thread-a'].transcript.messages;
+    f.client.event({
+      method: 'turn/completed',
+      params: {
+        threadId: 'thread-a',
+        turn: { id: 'turn-a', status: 'interrupted', itemsView, items: [] },
+      },
+    });
+    const transcript = f.client.snapshot.chats['thread-a'].transcript;
+    expect(transcript.messages).toEqual(before);
+    expect(transcript.turns[0].status).toBe('interrupted');
+  },
+);
+
+test('a summary can supply a final item that was not streamed', async () => {
+  const f = fixture();
+  await f.client.refresh();
+  await f.client.open('thread-a');
+  f.client.event({
+    method: 'turn/completed',
+    params: {
+      threadId: 'thread-a',
+      turn: {
+        id: 'turn-a',
+        status: 'completed',
+        itemsView: 'summary',
+        items: [
+          { id: 'new-final', type: 'agentMessage', text: 'Final from summary' },
+        ],
+      },
+    },
+  });
+  expect(
+    f.client.snapshot.chats['thread-a'].transcript.messages.map(m => m.id),
+  ).toEqual(['turn-a:user-a', 'turn-a:answer-a', 'turn-a:new-final']);
+});
+
+test.each([{ items: [] }, { items: [turn.items[0]] }])(
+  'an explicitly full turn replaces history, including removed items: $items',
+  async ({ items }) => {
+    const f = fixture();
+    await f.client.refresh();
+    await f.client.open('thread-a');
+    f.client.event({
+      method: 'turn/completed',
+      params: {
+        threadId: 'thread-a',
+        turn: { ...turn, items },
+      },
+    });
+    expect(
+      f.client.snapshot.chats['thread-a'].transcript.messages.map(m => m.id),
+    ).toEqual(items.map(item => `turn-a:${item.id}`));
+  },
+);
+
 test('a dropped acknowledgement is not replayed and includes the connection identity', async () => {
   const f = fixture();
   await f.client.refresh();

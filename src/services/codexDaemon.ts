@@ -616,12 +616,23 @@ export class CodexDaemonClient {
     if (turns) {
       let turn = turns.find(t => t.id === (p.turnId ?? p.turn?.id));
       if (p.turn) {
-        if (turn)
-          Object.assign(turn, {
-            ...p.turn,
-            items: p.turn.items?.length ? p.turn.items : turn.items,
-          });
-        else {
+        if (turn) {
+          // Completion events may contain only the final answer (itemsView: summary).
+          // Merge partial/legacy payloads by item ID, retaining message order; only an
+          // explicitly full snapshot can remove existing items, even when empty.
+          const items =
+            p.turn.itemsView === 'full'
+              ? (p.turn.items ?? [])
+              : Array.from(
+                  new Map(
+                    [...turn.items, ...(p.turn.items ?? [])].map(item => [
+                      item.id,
+                      item,
+                    ]),
+                  ).values(),
+                );
+          Object.assign(turn, p.turn, { items });
+        } else {
           turn = { ...p.turn, items: p.turn.items ?? [] };
           turns.push(turn);
         }
