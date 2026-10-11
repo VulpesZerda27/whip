@@ -494,7 +494,7 @@ export class CodexDaemonClient {
       const packet = JSON.parse(
         await this.native.codexCall('events', '{}'),
       ) as EventPacket;
-      if (!this.running || epoch !== this.epoch) return;
+      if (epoch !== this.epoch) return;
       if (packet.connectionId !== this.connectionId)
         throw new Error('Codex connection changed');
       for (const event of packet.events) this.event(event);
@@ -513,6 +513,7 @@ export class CodexDaemonClient {
     }
   }
   offline(error?: string) {
+    this.epoch++;
     this.openThreads.clear();
     const chats = Object.fromEntries(
       Object.entries(this.snapshot.chats).map(([id, chat]) => [
@@ -524,7 +525,6 @@ export class CodexDaemonClient {
   }
   stop() {
     this.running = false;
-    this.epoch++;
     this.unsubscribeWake?.();
     this.unsubscribeWake = undefined;
     clearTimeout(this.timer);

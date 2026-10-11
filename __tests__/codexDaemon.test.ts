@@ -589,3 +589,21 @@ test('a late failure from a stopped connection cannot overwrite reconnect loadin
   expect(f.client.snapshot.error).toBeUndefined();
   expect(f.client.snapshot.connected).toBe(false);
 });
+
+test('background suspension keeps already-drained events from the same healthy connection', async () => {
+  const f = fixture();
+  const call = f.native.codexCall.getMockImplementation()!;
+  let resolve!: (value: string) => void;
+  f.native.codexCall.mockImplementation(async (op, raw) => {
+    if (op === 'events') return new Promise(r => { resolve = r; });
+    return call(op, raw);
+  });
+  f.client.start();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  f.client.stop();
+  resolve(JSON.stringify({ connectionId: 'one', requests: [], events: [{
+    method: 'thread/status/changed', params: { threadId: 'thread-b', status: { type: 'active', activeFlags: [] } },
+  }] }));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(f.client.snapshot.threads.find(t => t.id === 'thread-b')?.status).toBe('working');
+});
