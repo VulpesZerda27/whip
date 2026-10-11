@@ -153,6 +153,48 @@ fn menu_summary(text: &str) -> String {
     }
 }
 
+fn workspace_trust_choices(text: &str) -> Option<Vec<AgentInteractionChoice>> {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let lines: Vec<_> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    // The shell command may remain above Claude's dialog. Only inspect the
+    // current region below its last full-width border.
+    let start = lines
+        .iter()
+        .rposition(|line| {
+            line.chars().count() >= 8 && line.chars().all(|c| matches!(c, '─' | '━' | '═'))
+        })
+        .map_or(0, |index| index + 1);
+    let lines = &lines[start..];
+    if lines.first().copied() != Some("Accessing workspace:")
+        || !lines.get(1).is_some_and(|path| path.starts_with('/'))
+        || !normalized.contains("Claude Code'll be able to read, edit, and execute files here.")
+        || !normalized.contains("Enter to confirm")
+        || !normalized.contains("Esc to cancel")
+    {
+        return None;
+    }
+    let mut choices = Vec::new();
+    for line in lines {
+        let label = line.trim_start_matches(['›', '❯', '>']).trim();
+        if matches!(label, "No, exit" | "Yes, I trust this folder") {
+            choices.push(AgentInteractionChoice {
+                label: label.to_owned(),
+                index: u32::try_from(choices.len()).ok()?,
+                selected: line.starts_with(['›', '❯', '>']),
+            });
+        }
+    }
+    (choices.len() == 2
+        && choices[0].label == "No, exit"
+        && choices[1].label == "Yes, I trust this folder"
+        && choices.iter().filter(|c| c.selected).count() == 1)
+        .then_some(choices)
+}
+
 fn project_prompt(
     text: String,
     binding_token: &str,
@@ -169,9 +211,25 @@ fn project_prompt(
     hash.update(generation.1.to_le_bytes());
     hash.update(revision.to_bits().to_le_bytes());
     hash.update(text.as_bytes());
-    let choices = menu_choices(&text);
+    let trust = workspace_trust_choices(&text);
+    let choices = trust.clone().unwrap_or_else(|| menu_choices(&text));
     let (kind, summary) = if !choices.is_empty() {
-        (AgentInteractionKind::Menu, menu_summary(&text))
+        (
+            AgentInteractionKind::Menu,
+            if trust.is_some() {
+                text.lines()
+                    .skip_while(|line| line.trim() != "Accessing workspace:")
+                    .take_while(|line| {
+                        line.trim().trim_start_matches(['›', '❯', '>']).trim() != "No, exit"
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .trim()
+                    .to_owned()
+            } else {
+                menu_summary(&text)
+            },
+        )
     } else if let Some(summary) = queued_question_summary(&text) {
         (AgentInteractionKind::QueuedQuestion, summary)
     } else {
@@ -200,6 +258,22 @@ fn pane_matches_binding(pane: &HerdrPaneInfo, binding: &AgentChatBinding) -> boo
         })
 }
 
+fn pane_matches_interaction(
+    pane: &HerdrPaneInfo,
+    terminal_id: &str,
+    binding: Option<&AgentChatBinding>,
+) -> bool {
+    binding.map_or_else(
+        || {
+            pane.terminal_id == terminal_id
+                && pane.agent.as_deref() == Some("claude")
+                && pane.agent_session.is_none()
+                && pane.agent_status == HerdrAgentStatus::Blocked
+        },
+        |binding| pane_matches_binding(pane, binding),
+    )
+}
+
 pub(super) fn interaction_target(
     inner: &RuntimeInner,
     terminal_id: &str,
@@ -208,25 +282,31 @@ pub(super) fn interaction_target(
     let binding = inner
         .agents
         .terminal_binding(terminal_id)
-        .filter(|binding| binding.binding_token == binding_token)
-        .ok_or_else(|| cancelled("This chat session has changed."))?;
+        .filter(|binding| binding.binding_token == binding_token);
+    if !binding_token.is_empty() && binding.is_none() {
+        return Err(cancelled("This chat session has changed."));
+    }
     let state = inner.state.lock();
     let host = state.host_state.projection();
-    let pane = host.snapshot.as_ref().and_then(|snapshot| {
-        snapshot
-            .panes
-            .iter()
-            .find(|pane| pane.terminal_id == terminal_id)
-    });
+    let pane = host
+        .snapshot
+        .as_ref()
+        .and_then(|snapshot| {
+            snapshot
+                .panes
+                .iter()
+                .find(|pane| pane.terminal_id == terminal_id)
+        })
+        .ok_or_else(|| cancelled("This terminal is no longer available."))?;
     if state.connection != HostConnectionState::Connected
         || host.sync_status != HostSyncStatus::Synced
         || host.freshness != HostFreshness::Fresh
-        || !pane.is_some_and(|pane| pane_matches_binding(pane, &binding))
+        || !pane_matches_interaction(pane, terminal_id, binding.as_ref())
     {
         return Err(cancelled("The agent is no longer waiting for input."));
     }
     Ok((
-        binding.pane_id,
+        pane.pane_id.clone(),
         (state.generation, state.herdr_recovery_revision),
     ))
 }
@@ -243,7 +323,7 @@ async fn read_prompt(
     let binding = inner
         .agents
         .terminal_binding(terminal_id)
-        .ok_or_else(|| cancelled("This chat session has changed."))?;
+        .filter(|binding| binding.binding_token == binding_token);
     let snapshot =
         control_request_inner(inner.clone(), HerdrControlRequest::SessionSnapshot).await?;
     let HerdrControlResult::SessionSnapshot { snapshot } = snapshot else {
@@ -252,7 +332,7 @@ async fn read_prompt(
     if !snapshot
         .panes
         .iter()
-        .any(|pane| pane_matches_binding(pane, &binding))
+        .any(|pane| pane_matches_interaction(pane, terminal_id, binding.as_ref()))
     {
         return Ok(None);
     }
@@ -273,14 +353,24 @@ async fn read_prompt(
                 && read.source == crate::herdr_api::HerdrPaneReadSource::Visible
                 && read.format == crate::herdr_api::HerdrPaneReadFormat::Text =>
         {
+            // The startup path has no session binding yet. It can expose only
+            // Claude's complete, recognized folder-trust dialog, never arbitrary input.
+            if binding_token.is_empty() && workspace_trust_choices(&read.text).is_none() {
+                return Ok(None);
+            }
+            let prompt_identity = if binding_token.is_empty() {
+                format!("startup:{terminal_id}")
+            } else {
+                binding_token.to_owned()
+            };
             Ok(
-                project_prompt(read.text, binding_token, generation, read.revision).map(|prompt| {
-                    LivePrompt {
+                project_prompt(read.text, &prompt_identity, generation, read.revision).map(
+                    |prompt| LivePrompt {
                         prompt,
                         pane_id,
                         generation,
-                    }
-                }),
+                    },
+                ),
             )
         }
         _ => Err(cancelled("The live agent prompt could not be read.")),
@@ -386,10 +476,28 @@ impl HostRuntime {
             .map_err(HerdrControlError::TransportDisconnected)?
             .spawn(async move {
                 let mut last = inner.interaction_response.lock().await;
-                last.retain(|terminal_id, _| inner.agents.terminal_binding(terminal_id).is_some());
+                let live_terminals: Vec<String> = inner
+                    .state
+                    .lock()
+                    .host_state
+                    .projection()
+                    .snapshot
+                    .as_ref()
+                    .map(|s| s.panes.iter().map(|p| p.terminal_id.clone()).collect())
+                    .unwrap_or_default();
+                last.retain(|terminal_id, _| live_terminals.contains(terminal_id));
                 let live = read_prompt(inner.clone(), &terminal_id, &binding_token)
                     .await?
                     .ok_or_else(|| cancelled("The agent is no longer waiting for input."))?;
+                if binding_token.is_empty()
+                    && (!answer.is_empty()
+                        || !(matches!(action.as_str(), "up" | "down" | "enter" | "esc")
+                            || action.starts_with("choice:")))
+                {
+                    return Err(HerdrControlError::InvalidField(
+                        "Choose a folder-trust option.".to_owned(),
+                    ));
+                }
                 let keys = response_keys(&live.prompt, &action, &answer)?;
                 if keys.is_empty() {
                     return Ok(());
@@ -553,5 +661,76 @@ mod tests {
         reserve_response(&mut last, &prompt.token, &prompt, false).unwrap();
         reserve_response(&mut last, &prompt.token, &prompt, true).unwrap();
         assert!(reserve_response(&mut last, &prompt.token, &prompt, true).is_err());
+    }
+    const TRUST: &str = "────────────────
+Accessing workspace:
+
+/home/martin
+
+Quick safety check: Is this a project you created or one that you trust?
+Claude Code'll be able to read, edit, and execute files here.
+Security guide
+
+  No, exit
+❯ Yes, I trust this folder
+
+Enter to confirm · Esc to cancel";
+
+    #[test]
+    fn workspace_trust_preserves_scope_and_requires_an_explicit_confirmation() {
+        let trust = project_prompt(TRUST.into(), "startup:terminal-a", (1, 0), 4.0).unwrap();
+        assert_eq!(trust.kind, AgentInteractionKind::Menu);
+        assert_eq!(trust.choices.len(), 2);
+        assert_eq!(trust.choices[1].label, "Yes, I trust this folder");
+        assert!(trust.summary.contains("/home/martin"));
+        assert!(trust.summary.contains("read, edit, and execute"));
+        assert!(!trust.summary.contains("No, exit"));
+        assert_eq!(response_keys(&trust, "choice:0", "").unwrap(), vec!["up"]);
+        assert_eq!(response_keys(&trust, "enter", "").unwrap(), vec!["enter"]);
+        let other = project_prompt(TRUST.into(), "startup:terminal-b", (1, 0), 4.0).unwrap();
+        assert_ne!(trust.token, other.token);
+        assert!(
+            workspace_trust_choices(&TRUST.replace("edit, and execute", "edit, and\nexecute"))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn incomplete_or_transcript_quoted_trust_prompts_are_not_startup_controls() {
+        assert!(
+            workspace_trust_choices(&TRUST.replace(
+                "Accessing workspace:",
+                "Conversation output\nAccessing workspace:"
+            ))
+            .is_none()
+        );
+        assert!(workspace_trust_choices(&TRUST.replace("Esc to cancel", "")).is_none());
+        assert!(workspace_trust_choices(&TRUST.replace("❯", " ")).is_none());
+        assert!(workspace_trust_choices(&TRUST.replace("  No, exit", "❯ No, exit")).is_none());
+        assert!(workspace_trust_choices("› 1. Approve shell command\n  2. Cancel").is_none());
+        assert!(
+            workspace_trust_choices(&format!("~ ❯ claude --permission-mode auto\n{TRUST}"))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn installed_claude_startup_screen_with_shell_scrollback_is_supported() {
+        let prompt = project_prompt(
+            include_str!("../../test-fixtures/claude/workspace-trust.txt").into(),
+            "startup:terminal",
+            (1, 0),
+            1.0,
+        )
+        .unwrap();
+        assert_eq!(prompt.kind, AgentInteractionKind::Menu);
+        assert!(prompt.choices[0].selected);
+        assert!(!prompt.choices[1].selected);
+        assert!(prompt.summary.starts_with("Accessing workspace:"));
+        assert!(prompt.summary.contains("/home/tester"));
+        assert_eq!(
+            response_keys(&prompt, "choice:1", "").unwrap(),
+            vec!["down"]
+        );
     }
 }

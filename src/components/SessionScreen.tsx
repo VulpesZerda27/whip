@@ -233,6 +233,7 @@ export function SessionScreen({
     focusedWorkspace?.workspace_id || '',
   );
   const [tabId, setTabId] = useState(focusedWorkspace?.active_tab_id || '');
+  const [startupTerminalKey, setStartupTerminalKey] = useState<string | null>(null);
   const [pendingCreatedSelection, setPendingCreatedSelection] =
     useState<CreatedTabFocusResult | null>(null);
   const [editorMode, setEditorMode] = useState<EditorMode | null>(null);
@@ -497,6 +498,12 @@ export function SessionScreen({
   );
   const chatVisible = savedChatOpen
     || chatPresentationVisible(activeChatView?.presentation) || restoringChat;
+  const preferredAgent = chatAgentForPane(activePane);
+  const claudeStartupVisible = Boolean(
+    visible && preferChat && !chatVisible && preferredAgent === 'claude' &&
+    activeTarget && startupTerminalKey !== activeTarget.key &&
+    (!activeChatView || chatPresentationLoading(activeChatView.presentation)),
+  );
   const activeSavedChat = savedChat?.paneId === activePane?.pane_id ? savedChat : null;
   const onChatSpeechError = useCallback((error: unknown) => {
     setAppAlert({ title: 'Could not read chat aloud', message: String(error) });
@@ -1268,6 +1275,7 @@ export function SessionScreen({
   };
 
   const closeActiveChat = useCallback(() => {
+    setStartupTerminalKey(activeTarget?.key ?? null);
     if (savedChatOpen) {
       setSavedChatOpen(false);
       setSavedChat(null);
@@ -1291,6 +1299,7 @@ export function SessionScreen({
   }, [activeTerminalSession?.terminalId, activeTarget, cancelChatOpen, savedChatOpen, updateChatRestoreIntent]);
 
   const openAgentChat = () => {
+    setStartupTerminalKey(null);
     if (!client) return openSavedChat();
     if (activeChatView && chatPresentationRequested(activeChatView.presentation)) return;
     if (activeTarget && (activeChatView || preferChat)) {
@@ -1327,19 +1336,24 @@ export function SessionScreen({
   const openPreferredChat = useEffectEvent(() => {
     reportBackgroundFailure(Promise.resolve(openAgentChat()), 'preferred-chat-open');
   });
-  const preferredAgent = chatAgentForPane(activePane);
   const preferredTarget = activePane && preferredAgent
     ? `${hostSessionId}:${activePane.pane_id}:${activePane.agent_session?.value || preferredAgent}`
     : null;
   useEffect(() => {
     if (!visible || !preferChat) {
       automaticChatTarget.current = null;
+      setStartupTerminalKey(null);
       return;
     }
+    if (startupTerminalKey === activeTarget?.key) return;
+    // Claude reports its session identity only after its first-run questions.
+    // The startup panel handles folder trust without requiring a transcript binding.
+    if (preferredAgent === 'claude' && !activePane?.agent_session &&
+        (activePane?.agent_status === 'blocked' || activePane?.agent_status === 'unknown')) return;
     if (!preferredTarget || (client && !activeTarget) || automaticChatTarget.current === preferredTarget || busy) return;
     automaticChatTarget.current = preferredTarget;
     openPreferredChat();
-  }, [activeTarget, busy, client, preferChat, preferredTarget, visible]);
+  }, [activeTarget, activePane?.agent_session, activePane?.agent_status, busy, client, preferChat, preferredAgent, preferredTarget, startupTerminalKey, visible]);
 
   return (
     <View
@@ -1357,7 +1371,7 @@ export function SessionScreen({
       )}
     >
       <TerminalBackground preferences={terminalPreferences} />
-      {!(preferChat && chatVisible) && <View
+      {!(preferChat && (chatVisible || claudeStartupVisible)) && <View
         className="absolute inset-x-0 z-30"
         style={{ bottom: terminalSessionChrome.bottom }}
       >
@@ -1619,7 +1633,7 @@ export function SessionScreen({
         )}
       </View>}
 
-      {preferChat && chatVisible ? (
+      {preferChat && (chatVisible || claudeStartupVisible) ? (
         <ChatSessionActions
           title={selectedTab?.label || 'Conversation'}
           subtitle={`${preferredAgent ? chatAgentDisplayName(preferredAgent) : ''} · ${workspace?.label || 'Workspace'}`}
@@ -1644,7 +1658,7 @@ export function SessionScreen({
       >
         <View pointerEvents="box-none" className="absolute inset-0">
           <TerminalScreen
-            simpleChat={preferChat && chatVisible}
+            simpleChat={preferChat && (chatVisible || claudeStartupVisible)}
             onResidencyEnd={onTerminalResidencyEnd}
             activeTarget={activeTarget}
             targets={terminalTargets}
@@ -1699,7 +1713,7 @@ export function SessionScreen({
                   }
                 : undefined
             }
-            chatViewEnabled={chatVisible}
+            chatViewEnabled={chatVisible || claudeStartupVisible}
             renderViewportOverlay={
               savedChatOpen
                 ? (insets, latestButtonBottom, search) => (
@@ -1891,6 +1905,22 @@ export function SessionScreen({
             }}
           />
         </View>
+        {claudeStartupVisible && activeTarget ? (
+          <ScrollView testID="claude-chat-startup" className="absolute inset-0 bg-background" contentContainerClassName="gap-4 px-5 py-8">
+            <Text className="text-lg font-semibold">Preparing Claude</Text>
+            <Text className="text-sm text-muted-foreground">
+              Complete any startup question below. Your chat opens automatically when Claude is ready.
+            </Text>
+            <AgentInteractionControls
+              target={{ native: activeTarget.client.native, terminalId: activeTarget.session.terminalId, bindingToken: activeChatView?.binding.bindingToken ?? '' }}
+              enabled={visible && activeTarget.hostConnected}
+              onOpenTerminal={closeActiveChat}
+            />
+            <Button variant="outline" onPress={closeActiveChat} accessibilityLabel="Open terminal during Claude startup">
+              <Text>Open terminal</Text>
+            </Button>
+          </ScrollView>
+        ) : null}
         {!activeTarget && !snapshot.server.running && (
           <View className="flex-1 items-center justify-center p-[30px]">
             <Text className="font-black text-terminal-text">

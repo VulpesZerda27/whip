@@ -142,7 +142,7 @@ test('a favorite loads its exact server, provider, model, effort and directory',
   expect(input('New project directory').props.value).toBe('/srv/website');
   await act(async () => { await button('Start conversation').props.onPress(); });
   expect(sessions.createWorkspace).toHaveBeenCalledWith('session-host-1', 'Website', '/srv/website');
-  expect(sessions.launchTab).toHaveBeenCalledWith('session-host-1', 'new-workspace', 'Website', expect.objectContaining({ kind: 'claude', args: expect.arrayContaining(['--effort', 'high']) }));
+  expect(sessions.launchTab).toHaveBeenCalledWith('session-host-1', 'new-workspace', 'Website', expect.objectContaining({ kind: 'claude', args: expect.arrayContaining(['--effort', 'high']) }), 'chat');
 });
 afterEach(() => act(() => renderer?.unmount()));
 
@@ -183,6 +183,7 @@ test('launch targets the selected server and workspace with that provider’s op
         'high',
       ],
     },
+    'chat',
   );
   expect(saveChatLaunchPreferences).toHaveBeenCalledWith({
     ...defaultChatLaunchPreferences,
@@ -251,6 +252,7 @@ test('a failed launch reuses a newly created workspace on retry', async () => {
     'new-workspace',
     '',
     expect.anything(),
+    'chat',
   );
   // Retrying must use the created workspace even before its snapshot event arrives.
   await act(async () => {
@@ -262,6 +264,7 @@ test('a failed launch reuses a newly created workspace on retry', async () => {
     'new-workspace',
     '',
     expect.anything(),
+    'chat',
   );
 });
 

@@ -313,7 +313,7 @@ export function AgentInteractionControls({
                   </Button>
                 </View>
               )}
-              <Button
+              {bindingToken ? <Button
                 variant="ghost"
                 size="sm"
                 className="self-start px-0"
@@ -328,7 +328,7 @@ export function AgentInteractionControls({
                     ? 'Hide terminal controls'
                     : 'Show terminal controls'}
                 </Text>
-              </Button>
+              </Button> : null}
             </>
           )}
           {(busy || waiting) && (

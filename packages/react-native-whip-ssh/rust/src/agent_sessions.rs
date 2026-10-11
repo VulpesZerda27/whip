@@ -1187,6 +1187,11 @@ impl AgentSessionManager {
                 resolve_rollout_path(&output, &session_id)?
             };
             let Some(path) = path else {
+                if agent == AgentTranscriptKind::Claude
+                    && self.wait_for_claude_creation(&key, operation_epoch, &session_id)
+                {
+                    return Ok(None);
+                }
                 return Err(AgentSessionError::SourceUnavailable(
                     if agent == AgentTranscriptKind::Codex {
                         "Codex has not created this rollout yet.".to_owned()
@@ -1208,11 +1213,12 @@ impl AgentSessionManager {
             } else {
                 None
             };
-            Ok::<_, AgentSessionError>((path, file_id, size, history))
+            Ok::<_, AgentSessionError>(Some((path, file_id, size, history)))
         }
         .await;
         let (path, file_id, size, history) = match result {
-            Ok(result) => result,
+            Ok(Some(result)) => result,
+            Ok(None) => return,
             Err(error) => {
                 let kind = if matches!(error, AgentSessionError::SourceUnavailable(_)) {
                     SessionFailureKind::SourceUnavailable
@@ -1783,6 +1789,63 @@ impl AgentSessionManager {
             emit(&self.inner, key.to_owned(), operation_epoch, update, cache);
         }
         Ok(())
+    }
+
+    fn wait_for_claude_creation(&self, key: &str, operation_epoch: u64, session_id: &str) -> bool {
+        let (update, delay) = {
+            let mut state = self.inner.state.lock();
+            let Some(session) = current_session_mut(&mut state, key, operation_epoch) else {
+                return false;
+            };
+            let AgentSessionCore::Claude(core) = &mut session.core else {
+                return false;
+            };
+            if !core.awaiting_first_file() || session.terminals.is_empty() {
+                return false;
+            }
+            let update = core.mark_waiting_for_creation();
+            let delay = if session.retry_running {
+                None
+            } else {
+                session.retry_running = true;
+                session.activity.pause_if_quiet(Instant::now());
+                Some(session.activity.poll_delay(FILE_SOURCE_POLL_DELAY))
+            };
+            (update, delay)
+        };
+        if let Some(update) = update {
+            emit(&self.inner, key.to_owned(), operation_epoch, update, None);
+        }
+        if let Some(delay) = delay {
+            let manager = self.clone();
+            let key = key.to_owned();
+            let session_id = session_id.to_owned();
+            if let Ok(runtime) = crate::runtime() {
+                runtime.spawn(async move {
+                    tokio::time::sleep(delay).await;
+                    let retry = {
+                        let mut state = manager.inner.state.lock();
+                        current_session_mut(&mut state, &key, operation_epoch).is_some_and(
+                            |session| {
+                                session.retry_running = false;
+                                !session.terminals.is_empty()
+                            },
+                        )
+                    };
+                    if retry {
+                        manager
+                            .resolve_and_open(
+                                key,
+                                operation_epoch,
+                                session_id,
+                                AgentTranscriptKind::Claude,
+                            )
+                            .await;
+                    }
+                });
+            }
+        }
+        true
     }
 
     fn schedule_opencode_poll(&self, key: String, operation_epoch: u64, session_id: String) {
@@ -2536,6 +2599,38 @@ mod tests {
             1,
             HerdrConnection::new(runtime_id.to_owned(), String::new(), None, None),
         )
+    }
+
+    #[test]
+    fn pending_claude_creation_is_idempotent_and_cannot_follow_a_closed_binding() {
+        let manager = test_manager("claude-startup");
+        manager.connected();
+        let binding = manager
+            .bind_authoritative(AuthoritativeAgentChatIdentity {
+                pane_id: "pane".into(),
+                terminal_id: "terminal".into(),
+                agent: AgentTranscriptKind::Claude,
+                session_id: SESSION.into(),
+            })
+            .unwrap();
+        let epoch = {
+            let mut state = manager.inner.state.lock();
+            let session = state.sessions.get_mut(&binding.transcript_key).unwrap();
+            session.started = true;
+            let epoch = session.operation_epoch;
+            drop(state);
+            epoch
+        };
+        assert!(manager.wait_for_claude_creation(&binding.transcript_key, epoch, SESSION));
+        assert_eq!(
+            manager.state(&binding.transcript_key).unwrap().status,
+            AgentTranscriptStatus::Live
+        );
+        let before = manager.state(&binding.transcript_key).unwrap();
+        assert!(manager.wait_for_claude_creation(&binding.transcript_key, epoch, SESSION));
+        assert_eq!(manager.state(&binding.transcript_key).unwrap(), before);
+        manager.close_terminal("terminal");
+        assert!(!manager.wait_for_claude_creation(&binding.transcript_key, epoch, SESSION));
     }
 
     #[test]

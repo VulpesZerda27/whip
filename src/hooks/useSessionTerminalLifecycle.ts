@@ -232,6 +232,7 @@ export function useSessionTerminalLifecycle({
       workspaceId: string,
       tabName: string,
       launch: TabLaunchIntent,
+      presentation: 'chat' | 'terminal' = 'terminal',
     ) => {
       const { runtime, hostId } = await prepareAgentPreferences(sessionId);
       await launchTabAndOpenCreatedTab(
@@ -243,6 +244,7 @@ export function useSessionTerminalLifecycle({
           navigation.selectPane(null);
           terminals.openPane(sessionId, created.root_pane);
           select(sessionId, 'terminal');
+          if (presentation === 'chat') navigation.showChat();
         },
       );
       publishControls();

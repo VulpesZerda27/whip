@@ -9,7 +9,7 @@ use crate::agent_sessions::{
 };
 use crate::agent_transcript::AgentTranscriptState;
 use crate::herdr_api::{
-    HerdrAgentKind, HerdrControlError, HerdrControlRequest, HerdrControlResult,
+    HerdrAgentKind, HerdrAgentStatus, HerdrControlError, HerdrControlRequest, HerdrControlResult,
     HerdrIntegrationInstallResult, HerdrIntegrationState, HerdrTabInfo, HerdrTabLaunch,
     HerdrTabLaunchResult, HerdrTabLaunchStage,
 };
@@ -236,7 +236,33 @@ where
     let Some((stage, request)) = launch_request(&tab, &root_pane, launch) else {
         return Ok(HerdrTabLaunchResult::Created { tab, root_pane });
     };
+    let claude_start = matches!(
+        &request,
+        HerdrControlRequest::AgentStart {
+            kind: HerdrAgentKind::Claude,
+            ..
+        }
+    );
     let result = launch_in_created_tab(request, &mut send).await;
+    // Herdr leaves a successfully spawned Claude process at its startup
+    // question and reports agent_not_ready. Open that exact blocked pane so
+    // the user can answer it; never repeat the launch or dismiss other errors.
+    if claude_start
+        && matches!(&result, Err(HerdrControlError::ProtocolError(code, _)) if code == "agent_not_ready")
+        && let Ok(HerdrControlResult::SessionSnapshot { snapshot }) =
+            send(HerdrControlRequest::SessionSnapshot).await
+        && let Some(pane) = snapshot.panes.iter().find(|pane| {
+            pane.pane_id == root_pane.pane_id
+                && pane.terminal_id == root_pane.terminal_id
+                && pane.agent.as_deref() == Some("claude")
+                && pane.agent_status == HerdrAgentStatus::Blocked
+        })
+    {
+        return Ok(HerdrTabLaunchResult::Created {
+            tab,
+            root_pane: pane.clone(),
+        });
+    }
     match result {
         Ok(_) => Ok(HerdrTabLaunchResult::Created { tab, root_pane }),
         Err(error) => Ok(HerdrTabLaunchResult::LaunchFailed {

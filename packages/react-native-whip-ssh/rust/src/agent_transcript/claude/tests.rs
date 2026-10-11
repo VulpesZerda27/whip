@@ -777,3 +777,26 @@ fn persisted_blank_interruption_and_api_error_records_keep_their_turns() {
     .state();
     assert_eq!(literal.messages[0].role, AgentMessageRole::User);
 }
+
+#[test]
+fn new_session_is_usable_before_its_first_file_and_later_loads_the_real_history() {
+    let mut core = ClaudeSessionCore::new(SESSION);
+    assert!(core.awaiting_first_file());
+    assert!(core.mark_waiting_for_creation().is_some());
+    assert_eq!(core.state().status, AgentTranscriptStatus::Live);
+    assert!(core.state().error.is_none());
+    assert!(core.state().messages.is_empty());
+    assert!(core.mark_waiting_for_creation().is_none());
+    let bytes = line(user("first", None, json!("Hello")));
+    let bound = core.bind_source(
+        "/real/session.jsonl".into(),
+        "file-id".into(),
+        bytes.len() as u64,
+    );
+    core.ingest(bound.source_generation, &bytes).unwrap();
+    assert_eq!(ids(&core.state()), vec!["first"]);
+    assert!(!core.awaiting_first_file());
+    core.invalidate_source();
+    assert!(!core.awaiting_first_file());
+    assert!(core.mark_waiting_for_creation().is_none());
+}

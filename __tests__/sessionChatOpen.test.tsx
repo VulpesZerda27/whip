@@ -1414,3 +1414,32 @@ test.each(['codex', 'claude'] as const)('%s chat web links open in the system br
   await act(async () => { ui('AgentChatView').props.onOpenWebLink(url); });
   expect(Linking.openURL).toHaveBeenCalledWith(url);
 });
+
+test.each([false, true])('Claude startup respects an explicit terminal choice (%s) when identity arrives', async terminalChosen => {
+  const host = setup('claude');
+  host.pane.agent_session = undefined;
+  host.pane.agent_status = 'blocked';
+  const prompt = jest.fn(async () => undefined);
+  Object.assign(host.native, { agentInteractionPrompt: prompt });
+  await act(async () => { renderer = create(<SessionScreen {...host.props} preferChat />); });
+  expect(renderer.root.findAllByProps({ testID: 'claude-chat-startup' })).toHaveLength(1);
+  expect(prompt).toHaveBeenCalledWith('terminal-1', '');
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+  expect(host.native.agentIntegrationStatus).not.toHaveBeenCalled();
+  if (terminalChosen) {
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Open terminal during Claude startup' }).props.onPress(); });
+    expect(renderer.root.findAllByProps({ testID: 'claude-chat-startup' })).toHaveLength(0);
+    expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+  }
+  host.pane.agent_session = { agent: 'claude', kind: 'id', source: 'herdr:claude', value: 'new-session' };
+  host.pane.agent_status = 'idle';
+  const binding = bindChat(host, 'claude');
+  host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: { ...binding.state, status: 'live' } }));
+  await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat />); });
+  expect(host.native.startAgentChat).toHaveBeenCalledTimes(terminalChosen ? 0 : 1);
+  if (terminalChosen) {
+    await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat visible={false} />); });
+    await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat />); });
+    expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+  }
+});

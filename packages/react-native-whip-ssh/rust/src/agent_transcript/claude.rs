@@ -737,6 +737,15 @@ impl ClaudeSessionCore {
         self.history_gate.mark_unavailable(reason);
         self.history_gate.next_status_update(&mut self.revision)
     }
+    pub(crate) fn awaiting_first_file(&self) -> bool {
+        self.cursor.source.is_none() && self.adapter.nodes.is_empty()
+    }
+    pub(crate) fn mark_waiting_for_creation(&mut self) -> Option<AgentTranscriptUpdate> {
+        // An identified interactive Claude session can accept its first prompt
+        // before it creates a JSONL file. Do not invent a file or cache boundary.
+        (self.awaiting_first_file() && self.history_gate.complete_revision(&mut self.revision))
+            .then(|| self.history_gate.status_update(self.revision))
+    }
     pub fn close_update(&mut self) -> AgentTranscriptUpdate {
         self.cursor.generation = self.cursor.generation.saturating_add(1);
         self.history_gate.close();

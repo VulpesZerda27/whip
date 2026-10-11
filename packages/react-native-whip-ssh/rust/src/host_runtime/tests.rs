@@ -739,6 +739,97 @@ fn new_tab_agent_launch_retries_busy_shell_without_recreating_tab() {
 }
 
 #[test]
+fn new_claude_launch_opens_its_blocked_startup_question_without_relaunching() {
+    crate::runtime().unwrap().block_on(async {
+        for case in [
+            "blocked",
+            "wrong-terminal",
+            "wrong-agent",
+            "working",
+            "disconnected",
+        ] {
+            let mut snapshot = batch_test_snapshot();
+            let tab = snapshot.tabs[0].clone();
+            let root_pane = snapshot.panes[0].clone();
+            snapshot.panes[0].agent = Some(
+                if case == "wrong-agent" {
+                    "codex"
+                } else {
+                    "claude"
+                }
+                .into(),
+            );
+            snapshot.panes[0].agent_status = if case == "working" {
+                HerdrAgentStatus::Working
+            } else {
+                HerdrAgentStatus::Blocked
+            };
+            if case == "wrong-terminal" {
+                snapshot.panes[0].terminal_id = "replacement".into();
+            }
+            let error = HerdrControlError::ProtocolError(
+                "agent_not_ready".into(),
+                "blocked during startup".into(),
+            );
+            let mut requests = Vec::new();
+            let result = create_tab_with_launch_using(
+                tab.workspace_id.clone(),
+                tab.label.clone(),
+                HerdrTabLaunch::Agent {
+                    kind: HerdrAgentKind::Claude,
+                    args: Vec::new(),
+                },
+                |request| {
+                    requests.push(request.clone());
+                    std::future::ready(match request {
+                        HerdrControlRequest::TabCreate { .. } => {
+                            Ok(HerdrControlResult::TabCreated {
+                                tab: tab.clone(),
+                                root_pane: root_pane.clone(),
+                            })
+                        }
+                        HerdrControlRequest::AgentStart { .. } => Err(error.clone()),
+                        HerdrControlRequest::SessionSnapshot if case == "disconnected" => {
+                            Err(HerdrControlError::TransportDisconnected("gone".into()))
+                        }
+                        HerdrControlRequest::SessionSnapshot => {
+                            Ok(HerdrControlResult::SessionSnapshot {
+                                snapshot: snapshot.clone(),
+                            })
+                        }
+                        _ => panic!("unexpected request"),
+                    })
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(requests.len(), 3);
+            assert_eq!(
+                requests
+                    .iter()
+                    .filter(|r| matches!(r, HerdrControlRequest::AgentStart { .. }))
+                    .count(),
+                1
+            );
+            if case == "blocked" {
+                assert_eq!(
+                    result,
+                    HerdrTabLaunchResult::Created {
+                        tab,
+                        root_pane: snapshot.panes[0].clone()
+                    }
+                );
+            } else {
+                assert!(
+                    matches!(result, HerdrTabLaunchResult::LaunchFailed { .. }),
+                    "{case}"
+                );
+            }
+        }
+    });
+}
+
+#[test]
 fn cancelled_reverse_control_launch_preserves_existing_session_across_reconnect()
 -> Result<(), Box<dyn std::error::Error>> {
     use crate::reverse_control::tests::{
@@ -1530,6 +1621,43 @@ fn inline_interaction_requires_a_fresh_blocked_pane_and_the_current_binding() {
     snapshot.panes[0].agent_session.as_mut().unwrap().value =
         "22222222-2222-4222-8222-222222222222".into();
     install_agent_chat_snapshot(&inner, snapshot);
+    assert!(target().is_err());
+}
+
+#[test]
+fn startup_interaction_requires_a_fresh_blocked_claude_terminal() {
+    let _guard = EVENT_SINK_TEST_LOCK.lock();
+    let inner = connected_runtime_inner("claude-startup-interaction");
+    let mut snapshot = agent_chat_snapshot(None, None);
+    snapshot.panes[0].agent = Some("claude".into());
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Blocked;
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    let target = || interaction::interaction_target(&inner, "terminal-pane-1", "");
+    assert_eq!(target().unwrap().0, "pane-1");
+    assert!(interaction::interaction_target(&inner, "terminal-pane-2", "").is_err());
+    assert!(interaction::interaction_target(&inner, "terminal-pane-1", "obsolete").is_err());
+
+    for status in [
+        HerdrAgentStatus::Idle,
+        HerdrAgentStatus::Working,
+        HerdrAgentStatus::Unknown,
+    ] {
+        snapshot.panes[0].agent_status = status;
+        install_agent_chat_snapshot(&inner, snapshot.clone());
+        assert!(target().is_err());
+    }
+    snapshot.panes[0].agent_status = HerdrAgentStatus::Blocked;
+    snapshot.panes[0].agent = Some("codex".into());
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_err());
+    snapshot.panes[0].agent = Some("claude".into());
+    install_agent_chat_snapshot(&inner, snapshot.clone());
+    assert!(target().is_ok());
+    inner.state.lock().host_state.begin_sync(1);
+    assert!(target().is_err());
+    install_agent_chat_snapshot(&inner, snapshot);
+    assert!(target().is_ok());
+    inner.state.lock().connection = HostConnectionState::Disconnected;
     assert!(target().is_err());
 }
 

@@ -170,7 +170,17 @@ option, then confirm it. Controls are bound to the current terminal and prompt;
 the native runtime checks the live prompt again before sending an answer. Prompt
 polling pauses in the background. Free-text and manual controls remain available
 for dialogs that need them, with a terminal fallback for unsupported prompts or
-first-run login/trust screens.
+first-run login screens.
+
+Claude's folder-trust question also appears in chat before a conversation ID is
+available. The folder and access scope remain visible; select an option and
+explicitly confirm it. The native runtime rechecks the current terminal, live
+prompt and connection before responding. It does not accept trust automatically.
+Claude intentionally asks again for each new session in the home directory;
+see [workspace trust](https://code.claude.com/docs/en/permissions#project-allow-rules-and-workspace-trust).
+After startup, a new Claude session opens as an empty usable chat even before
+its first transcript file exists. Reins waits for that exact session's file and
+loads it when Claude writes the first message.
 
 ## Voice
 
@@ -240,6 +250,21 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.16 opens newly launched Claude agents in Chat, treats a confirmed
+blocked startup as a question, and handles its workspace-trust screen inline.
+A new session with no transcript file opens an empty usable chat while the exact
+file is discovered. The installed Claude 2.1.285 trust screen was reproduced in
+an isolated Herdr session and captured as a sanitized regression fixture.
+All 2,056 JavaScript tests, 604 Rust tests, TypeScript, Clippy, app-version and
+license checks pass. Coverage includes changing sessions/connections, preserving
+an explicit Terminal choice, avoiding duplicate launches, and the first real
+message replacing the empty startup state.
+
+Version 1.8.15 makes expected connection startup a neutral syncing state, removes
+redundant Connect rows from Chats, and syncs Codex read state from freshly
+confirmed, exactly linked Herdr terminals. Unlinked older terminals require
+opening the conversation once in Reins, as described above.
 
 Version 1.8.14 removes the separate Herd dashboard, memberships/purchases, usage
 statistics, feedback worker, embedded browser and phone-control/Shizuku features.

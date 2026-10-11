@@ -413,3 +413,11 @@ test('invalid answers retain the draft and allow correction without hiding the e
     'Answers must be a single line.',
   );
 });
+
+test('a startup trust menu works before session identity exists and exposes no free-text terminal controls', async () => {
+  await mount(true, { ...TARGET, bindingToken: '' });
+  expect(readPrompt).toHaveBeenCalledWith('terminal-1', '');
+  expect(renderer.root.findAll(node => node.props.accessibilityLabel === 'Toggle terminal controls')).toHaveLength(0);
+  await act(async () => { button('Confirm agent selection').props.onPress(); });
+  expect(respond).toHaveBeenCalledWith('terminal-1', '', PROMPT.token, 'enter', '');
+});

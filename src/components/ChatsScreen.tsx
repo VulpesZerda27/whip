@@ -357,7 +357,7 @@ export function ChatsScreen({
       // Keep an already-created workspace selected if a later launch fails.
       setWorkspaceSelection({ hostId: host.id, workspaceId: workspace });
       setDirectory('');
-      await sessions.launchTab(session.id, workspace, name.trim(), intent);
+      await sessions.launchTab(session.id, workspace, name.trim(), intent, 'chat');
       setCreating(false);
     } catch (reason) {
       setError(String(reason));

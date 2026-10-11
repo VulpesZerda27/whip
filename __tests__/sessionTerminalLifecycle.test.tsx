@@ -96,7 +96,7 @@ function setup(
       openPane,
       openSshShell: jest.fn(),
     },
-    navigation: { selectPane: jest.fn() },
+    navigation: { selectPane: jest.fn(), showChat: jest.fn() },
     select: jest.fn(),
     t: (key: string) => key,
   } as unknown as Parameters<typeof useSessionTerminalLifecycle>[0];
@@ -161,6 +161,21 @@ test('startup skips an unattached client and restores preferences once it attach
   jest.mocked(update.options.commitAppCore).mockClear();
   await update();
   expect(update.options.commitAppCore).not.toHaveBeenCalled();
+});
+
+test.each(['chat', 'terminal'] as const)('launching a new agent opens the requested %s presentation', async presentation => {
+  const client = new HerdrClient();
+  const runtime = nativeRuntime();
+  const pane = { pane_id: 'created-pane', terminal_id: 'created-terminal' } as PaneInfo;
+  Object.assign(runtime, { createTabWithLaunch: jest.fn(async () => ({ root_pane: pane, tab: { tab_id: 'created-tab' } })) });
+  await client.connect(profile);
+  const update = setup(client);
+  await act(async () => {
+    await lifecycle.launchTab(profile.id, 'workspace', 'Claude', { type: 'agent', kind: 'claude', args: [], reverseControl: false }, presentation);
+  });
+  expect(update.options.terminals.openPane).toHaveBeenCalledWith(profile.id, pane);
+  expect(update.options.select).toHaveBeenCalledWith(profile.id, 'terminal');
+  expect(update.options.navigation.showChat).toHaveBeenCalledTimes(presentation === 'chat' ? 1 : 0);
 });
 
 test('cached terminals can be selected before SSH attaches without creating render targets or sending focus commands', () => {
