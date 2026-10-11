@@ -231,7 +231,13 @@ Version 1.8.13 renames this fork to Reins and applies the supplied standard, dar
 and tinted artwork to the app and Android launcher. The application ID and signing
 configuration are unchanged. About and license screens identify the Whip origin,
 modification date and AGPL license, with source and installation links for this
-fork. TypeScript, all 2,322 JavaScript tests and bundled-license checks pass.
+fork. TypeScript, all 2,322 JavaScript tests, full ESLint, app-version and
+bundled-license checks pass. The signed ARM64 APK reports Reins 1.8.13 (version
+code 239), with the same package and certificate as Whip Chat 1.8.12. An Android
+emulator upgrade retained a saved notification preference; launcher and About
+screens show the new name and artwork. The QR extracted from the final APK decodes
+to this fork's installation guide. Android bundle inputs now include artwork so
+image-only changes cannot silently leave stale assets in an incremental build.
 
 Version 1.8.12 fixes live Codex turns losing user messages and intermediate steps
 when a completion notification contains only a final-answer summary. All 206 Jest
