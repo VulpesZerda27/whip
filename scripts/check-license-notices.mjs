@@ -13,6 +13,11 @@ const unknownLicenseValues = new Set(['', 'n/a', 'none', 'unknown', 'unlicensed'
 
 const noticeSources = [
   {
+    id: 'reins',
+    asset: 'assets/licenses/whip-AGPL-3.0.txt',
+    source: 'LICENSE',
+  },
+  {
     id: 'subsampling-scale-image-view',
     asset: 'assets/licenses/subsampling-scale-image-view-Apache-2.0.txt',
     sha256: '73ba74dfaa520b49a401b5d21459a8523a146f3b7518a833eea5efa85130bf68',

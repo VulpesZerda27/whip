@@ -66,7 +66,7 @@ test('checks only on demand and offers the GitHub release for a newer version', 
     expect.objectContaining({ cache: 'no-store', headers: { Accept: 'application/vnd.github+json' } }),
   );
   expect(evaluateAppUpdate).toHaveBeenCalledWith('1.7.6', releaseJson);
-  expect(content()).toContain('Whip 1.7.7 is available.');
+  expect(content()).toContain('Reins 1.7.7 is available.');
   expect(Linking.openURL).not.toHaveBeenCalled();
   act(() => {
     view.root.findAllByType('Button' as never).find(node => node.props.accessibilityRole === 'link')!.props.onPress();
@@ -96,7 +96,7 @@ test('prevents duplicate requests while checking and lets failures be retried', 
   expect(button().props.disabled).toBe(false);
   expect(content()).toContain(en['about.updateCheckError']);
   await press();
-  expect(content()).toContain('Whip 1.7.7 is available.');
+  expect(content()).toContain('Reins 1.7.7 is available.');
   expect(content()).not.toContain(en['about.updateCheckError']);
 });
 

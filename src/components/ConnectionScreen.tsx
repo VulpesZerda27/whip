@@ -19,7 +19,7 @@ import { cn } from '@/src/lib/utils';
 import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
-import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
+import { hapticPress, IconButton, ScreenHeader, ReinsMark } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -268,7 +268,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         onLayout={revealFocusedField}
         onScroll={event => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
         scrollEventThrottle={16}><View className="p-4 pb-11">
-        <View className="mb-[30px] flex-row items-center gap-3.5"><WhipMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">{t('connection.title')}</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">{t('connection.intro')}</Text></View></View>
+        <View className="mb-[30px] flex-row items-center gap-3.5"><ReinsMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">{t('connection.title')}</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">{t('connection.intro')}</Text></View></View>
 
         <GlassSurface className="rounded-lg border border-white/30 p-4 dark:border-white/10">
         <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('connection.hostIdentity')}</Text>

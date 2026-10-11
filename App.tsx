@@ -8,7 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import { AppShell } from './src/components/AppShell';
-import { ReducedMotionProvider, WhipMark } from './src/components/app-ui';
+import { ReducedMotionProvider, ReinsMark } from './src/components/app-ui';
 import { chatCjkFontFamily, guiFontFamilies } from './src/lib/guiFonts';
 import { bundledAsset } from './src/lib/bundledAsset';
 import { chatCjkFontAsset } from './src/services/chatFontAsset';
@@ -153,7 +153,7 @@ function AppContent() {
   if (!appReady) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <WhipMark accessibilityLabel={t('app.loading')} size={64} />
+        <ReinsMark accessibilityLabel={t('app.loading')} size={64} />
       </View>
     );
   }

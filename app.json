@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Whip Chat",
+    "name": "Reins",
     "slug": "herdr-remote",
     "icon": "./assets/icon.png",
     "scheme": "whip",
@@ -11,7 +11,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Whip to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
+          "cameraPermission": "Allow Reins to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
@@ -19,20 +19,24 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Allow Whip to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
-          "photosPermission": "Allow Whip to attach selected photos to the remote terminal."
+          "cameraPermission": "Allow Reins to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
+          "photosPermission": "Allow Reins to attach selected photos to the remote terminal."
         }
       ],
       [
         "expo-localization",
         {
-          "supportedLocales": ["en", "zh-Hant", "fr"]
+          "supportedLocales": [
+            "en",
+            "zh-Hant",
+            "fr"
+          ]
         }
       ],
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Allow Whip to use Face ID to protect SSH keys and app access."
+          "faceIDPermission": "Allow Reins to use Face ID to protect SSH keys and app access."
         }
       ],
       "expo-video",
@@ -40,7 +44,7 @@
       [
         "expo-sensors",
         {
-          "motionPermission": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open."
+          "motionPermission": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Reins is open."
         }
       ]
     ],
@@ -54,12 +58,14 @@
           "NSAllowsArbitraryLoadsInWebContent": true
         },
         "ITSAppUsesNonExemptEncryption": false,
-        "NSBonjourServices": ["_expo._tcp"],
-        "NSFaceIDUsageDescription": "Allow Whip to use Face ID to protect SSH keys and app access.",
-        "NSLocalNetworkUsageDescription": "Whip connects to SSH servers on your local network.",
-        "NSLocationWhenInUseUsageDescription": "Allow an agent launched with Reverse Control to request your current location while Whip is open.",
-        "NSMotionUsageDescription": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Whip is open.",
-        "NSPhotoLibraryUsageDescription": "Allow Whip to select terminal and app background images."
+        "NSBonjourServices": [
+          "_expo._tcp"
+        ],
+        "NSFaceIDUsageDescription": "Allow Reins to use Face ID to protect SSH keys and app access.",
+        "NSLocalNetworkUsageDescription": "Reins connects to SSH servers on your local network.",
+        "NSLocationWhenInUseUsageDescription": "Allow an agent launched with Reverse Control to request your current location while Reins is open.",
+        "NSMotionUsageDescription": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Reins is open.",
+        "NSPhotoLibraryUsageDescription": "Allow Reins to select terminal and app background images."
       }
     },
     "android": {
@@ -69,7 +75,12 @@
         "ACCESS_NETWORK_STATE"
       ],
       "allowBackup": true,
-      "package": "io.github.vulpeszerda27.whipchat"
+      "package": "io.github.vulpeszerda27.whipchat",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/reins/android-foreground.png",
+        "backgroundColor": "#151B28",
+        "monochromeImage": "./assets/reins/android-monochrome.png"
+      }
     },
     "web": {
       "bundler": "metro"

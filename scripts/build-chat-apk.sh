@@ -23,11 +23,12 @@ export CC_aarch64_linux_android="$ndk_bin/aarch64-linux-android24-clang"
 export AR_aarch64_linux_android="$ndk_bin/llvm-ar"
 export NODE_ENV=production
 
+node scripts/generate-reins-assets.mjs
 android/gradlew -p android app:assembleRelease \
   -PreactNativeArchitectures=arm64-v8a -Pwhip.skipR8=true \
   -Pexpo.useLegacyPackaging=true \
   --no-daemon --max-workers=4 "$@"
 mkdir -p artifacts
-cp android/app/build/outputs/apk/release/app-release.apk artifacts/whip-chat-arm64.apk
-sha256sum artifacts/whip-chat-arm64.apk > artifacts/whip-chat-arm64.apk.sha256
-echo "APK: $repo_dir/artifacts/whip-chat-arm64.apk"
+cp android/app/build/outputs/apk/release/app-release.apk artifacts/reins-arm64.apk
+sha256sum artifacts/reins-arm64.apk > artifacts/reins-arm64.apk.sha256
+echo "APK: $repo_dir/artifacts/reins-arm64.apk"

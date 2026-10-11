@@ -180,7 +180,7 @@ RCT_EXPORT_METHOD(battery:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseReje
 RCT_EXPORT_METHOD(location:(NSString *)requestId resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-    reject(@"device_unavailable", @"Keep Whip foregrounded to request location", nil);
+    reject(@"device_unavailable", @"Keep Reins foregrounded to request location", nil);
     return;
   }
   if (![CLLocationManager locationServicesEnabled]) {
@@ -252,7 +252,7 @@ RCT_EXPORT_METHOD(network:(NSString *)requestId resolve:(RCTPromiseResolveBlock)
 RCT_EXPORT_METHOD(sensorSnapshot:(NSString *)requestId sensor:(NSString *)sensor resolve:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject)
 {
   if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-    reject(@"device_unavailable", @"Keep Whip foregrounded to sample sensors", nil);
+    reject(@"device_unavailable", @"Keep Reins foregrounded to sample sensors", nil);
     return;
   }
   if ([sensor isEqualToString:@"barometer"]) {

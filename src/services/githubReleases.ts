@@ -2,6 +2,8 @@ import { evaluateAppUpdate, type AppUpdateCheck } from 'react-native-whip-ssh';
 
 const WHIP_GITHUB_REPOSITORY = 'VulpesZerda27/whip';
 export const WHIP_REPOSITORY_URL = `https://github.com/${WHIP_GITHUB_REPOSITORY}`;
+export const REINS_SOURCE_URL = `${WHIP_REPOSITORY_URL}/tree/feat/mobile-chat-mode`;
+export const REINS_INSTALL_URL = `${WHIP_REPOSITORY_URL}/blob/feat/mobile-chat-mode/docs/chat-mode.md`;
 export const WHIP_RELEASES_URL = `${WHIP_REPOSITORY_URL}/releases`;
 export const WHIP_LATEST_RELEASE_URL = `${WHIP_RELEASES_URL}/latest`;
 const LATEST_RELEASE_API_URL = `https://api.github.com/repos/${WHIP_GITHUB_REPOSITORY}/releases/latest`;

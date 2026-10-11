@@ -28,7 +28,7 @@ class WhipDictationModule(private val context: ReactApplicationContext) :
       }
       val activity = context.currentActivity
       if (activity == null) {
-        promise.reject("E_DICTATION_UNAVAILABLE", "Open Whip Chat to record a message")
+        promise.reject("E_DICTATION_UNAVAILABLE", "Open Reins to record a message")
         return@runOnUiThread
       }
       pending = promise

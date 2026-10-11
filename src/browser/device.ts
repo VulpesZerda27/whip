@@ -111,7 +111,7 @@ export async function deviceAction(
   if (!native)
     throw failure(
       'device_unavailable',
-      'Device tools require a native Whip build',
+      'Device tools require a native Reins build',
     );
   const active = () => {
     if (signal.aborted) throw failure('cancelled', 'Device action cancelled');
@@ -121,7 +121,7 @@ export async function deviceAction(
     if (AppState.currentState !== 'active')
       throw failure(
         'device_unavailable',
-        'Keep Whip foregrounded to use this device tool',
+        'Keep Reins foregrounded to use this device tool',
       );
   };
   active();

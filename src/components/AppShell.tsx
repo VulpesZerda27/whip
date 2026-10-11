@@ -564,7 +564,7 @@ export function AppShell({
                             alertAgent(
                               {
                                 terminal_id: 'whip-alert-test',
-                                agent: 'Whip',
+                                agent: 'Reins',
                                 agent_status: 'done',
                                 workspace_id: 'whip-alert-test',
                                 tab_id: 'whip-alert-test',

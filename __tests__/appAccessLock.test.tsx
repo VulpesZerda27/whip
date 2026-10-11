@@ -17,13 +17,13 @@ jest.mock('react-native', () => ({
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => ({
-      'app.biometricLocked': 'Whip is locked',
+      'app.biometricLocked': 'Reins is locked',
       'app.biometricLockedCopy': 'Authenticate to continue',
       'app.biometricRetry': 'Try again',
     })[key] || key,
   }),
 }));
-jest.mock('../src/components/app-ui', () => ({ WhipMark: 'WhipMark' }));
+jest.mock('../src/components/app-ui', () => ({ ReinsMark: 'ReinsMark' }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 
@@ -46,7 +46,7 @@ describe('AppAccessLock', () => {
 
     const modal = findHost(renderer.root, 'Modal');
     expect(modal.props.visible).toBe(true);
-    expect(findHost(renderer.root, 'WhipMark').props.accessibilityLabel).toBe('Whip is locked');
+    expect(findHost(renderer.root, 'ReinsMark').props.accessibilityLabel).toBe('Reins is locked');
 
     await act(() => findHost(renderer.root, 'Button').props.onPress());
     await act(() => modal.props.onRequestClose());

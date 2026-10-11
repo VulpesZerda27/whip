@@ -39,7 +39,7 @@ function promptCopy(
     };
   }
   return {
-    explanation: `Whip needs Herdr\u2019s native ${name} session identity.`,
+    explanation: `Reins needs Herdr\u2019s native ${name} session identity.`,
     title: `Install Herdr ${name} integration?`,
   };
 }

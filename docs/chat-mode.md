@@ -1,6 +1,8 @@
-# Whip Chat
+# Reins
 
-This personal fork adds a **Chats** home screen to Whip. New installs open there;
+Reins (formerly Whip Chat) is an independent fork of Whip, modified in October
+2026 and licensed under AGPL-3.0-or-later. Original credits and license notices
+remain available in More → About → Open-source licenses. This fork adds a **Chats** home screen to Whip. New installs open there;
 the upstream Hosts, Herd, Terminal and More surfaces are still available.
 
 ## Daily use
@@ -169,17 +171,28 @@ The dedicated button is Android-only; iOS retains keyboard dictation.
 ## Installation and settings
 
 The Android application ID is `io.github.vulpeszerda27.whipchat`, with launcher
-name **Whip Chat**. It installs beside official Whip. Android requires the same
+name **Reins** (formerly **Whip Chat**). It installs beside official Whip. Android requires the same
 signing identity to update an installed app, so this fork cannot replace the
 official app or read its private settings/credentials. This upstream version
 does not offer a portable settings export. Add servers and credentials once
 in the fork; keep the official app installed until the new setup works.
 
 Subsequent APKs with this application ID and the same private signing key can
-update Whip Chat in place and preserve its settings. Do not uninstall it to
+update Reins or an existing Whip Chat installation in place and preserve its settings. Do not uninstall it to
 update. Keep a private backup of your signing keystore and its passwords.
 Do not commit signing files or SSH credentials. Update checks point to this
 fork's GitHub releases, not upstream's incompatible APKs.
+
+## Branding
+
+The original standard, dark and tinted icons are in `assets/reins/`. Run
+`npm run generate:android-icon` to regenerate Android adaptive, legacy, themed
+and notification icons, the iOS icon artwork, and the in-app installation QR.
+The release build runs this step automatically. Launcher labels, in-app copy and
+permissions use Reins; package IDs, native module names, storage keys and the
+private signing identity remain stable so the existing installation updates
+without losing servers, settings or credentials. Source and installation links
+point to this fork, while Whip remains credited as the upstream project.
 
 ## Build on Linux
 
@@ -206,13 +219,19 @@ rustup target add --toolchain 1.99.0 aarch64-linux-android
 bash scripts/build-chat-apk.sh
 ```
 
-The signed, bundled release APK is `artifacts/whip-chat-arm64.apk`. It needs no
+The signed, bundled release APK is `artifacts/reins-arm64.apk`. It needs no
 Metro server. The helper skips R8 optimization to keep personal builds faster.
 It packages compressed native libraries for extraction during installation,
 which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.13 renames this fork to Reins and applies the supplied standard, dark
+and tinted artwork to the app and Android launcher. The application ID and signing
+configuration are unchanged. About and license screens identify the Whip origin,
+modification date and AGPL license, with source and installation links for this
+fork. TypeScript, all 2,322 JavaScript tests and bundled-license checks pass.
 
 Version 1.8.12 fixes live Codex turns losing user messages and intermediate steps
 when a completion notification contains only a final-answer summary. All 206 Jest

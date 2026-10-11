@@ -26,14 +26,14 @@ afterEach(() => dom.window.close());
 test('preserves README image dimensions, centered paragraphs, linked badges, and gallery table cells', () => {
   render(readFileSync(resolve(__dirname, '../README.md'), 'utf8'));
   const document = dom.window.document;
-  const logo = document.querySelector('img[alt="Whip app icon"]')!;
+  const logo = document.querySelector('img[alt="Reins app icon"]')!;
   expect(logo.getAttribute('width')).toBe('128');
   expect(logo.parentElement!.getAttribute('align')).toBe('center');
   expect(document.querySelector('img[alt="CI status"]')!.parentElement!.tagName).toBe('A');
   expect(document.querySelector('img[alt="Download Whip Herd on the App Store"]')!.getAttribute('width')).toBe('190');
   expect(document.querySelectorAll('table img').length).toBeGreaterThan(2);
   expect(document.querySelector('table img')!.closest('td')).not.toBeNull();
-  expect(messages.find(message => message.type === 'images')!.targets).toContain('assets/whip-cyborg-hand-concept.svg');
+  expect(messages.find(message => message.type === 'images')!.targets).toContain('assets/reins/reins-icon.png');
 });
 
 test('discovers real image nodes, decodes HTML entities, and ignores code samples and unsafe sources', () => {

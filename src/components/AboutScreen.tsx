@@ -17,9 +17,9 @@ import { herdrProtocolLabel } from 'react-native-whip-ssh';
 import terminalFonts from '@/assets/terminal-fonts/manifest.json';
 import { bundledAsset } from '@/src/lib/bundledAsset';
 import { isUnknownRecord } from '@/src/lib/unknown';
-import { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
+import { REINS_INSTALL_URL, REINS_SOURCE_URL, WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 import { CheckForUpdates } from './CheckForUpdates';
-import { hapticPress, HerdrMark, WhipMark } from './app-ui';
+import { hapticPress, HerdrMark, ReinsMark } from './app-ui';
 import { GlassBackdrop } from './GlassSurface';
 import { GlassIconBadge } from './GlassControls';
 import { SectionCard, SectionCardHeader } from './CollapsibleSectionCard';
@@ -30,7 +30,7 @@ import { Text } from './ui/text';
 export { WHIP_REPOSITORY_URL } from '@/src/services/githubReleases';
 export const HERDR_WEBSITE_URL = 'https://herdr.dev/';
 export const X_PROFILE_URL = 'https://x.com/Kosumi1989';
-export const WHIP_INSTALL_URL = 'https://kosumic.github.io/whip/';
+export const WHIP_INSTALL_URL = REINS_INSTALL_URL;
 const ABOUT_EXPAND_DURATION = 340;
 const ABOUT_COLLAPSE_DURATION = 260;
 const INSTALL_QR_SIZE = 240;
@@ -82,14 +82,14 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
     });
   };
   const openRepository = () => {
-    Linking.openURL(WHIP_REPOSITORY_URL).catch(error => {
+    Linking.openURL(REINS_SOURCE_URL).catch(error => {
       Alert.alert(t('about.githubError'), String(error));
     });
   };
   const shareRepository = () => {
     Share.share({
       title: t('about.shareTitle'),
-      message: t('about.shareMessage', { url: WHIP_REPOSITORY_URL }),
+      message: t('about.shareMessage', { url: REINS_SOURCE_URL }),
     }).catch(error => {
       Alert.alert(t('about.shareError'), String(error));
     });
@@ -193,7 +193,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
                 <XMark size={20} />
               </View>
               <View className="min-w-0 flex-1">
-                <Text className="text-[15px] font-semibold leading-5">X</Text>
+                <Text className="text-[15px] font-semibold leading-5">Whip · X</Text>
                 <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground" numberOfLines={1}>@Kosumi1989</Text>
               </View>
               <Icon as={ExternalLink} className="text-muted-foreground" size={19} />
@@ -226,9 +226,10 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
           </View>
 
           <View className="mt-9 items-center">
-            <WhipMark size={82} accessibilityLabel={t('about.appIcon')} />
-            <Text className="mt-4 text-[28px] font-semibold leading-9">Whip</Text>
+            <ReinsMark size={82} accessibilityLabel={t('about.appIcon')} />
+            <Text className="mt-4 text-[28px] font-semibold leading-9">Reins</Text>
             <Text className="mt-1 text-center text-sm leading-5 text-muted-foreground">{t('about.tagline')}</Text>
+            <Text className="mt-2 text-center text-xs leading-[18px] text-muted-foreground">{t('about.forkAttribution')}</Text>
             <Text className="mt-1.5 text-center text-xs leading-[17px] text-muted-foreground/70">{t('common.version', { version: whipVersion })}</Text>
             {whipCommit ? (
               <Button
@@ -250,7 +251,7 @@ export function AboutSection({ onOpenLicenses }: { onOpenLicenses: () => void })
             <Image
               accessibilityLabel={t('about.installQr')}
               accessibilityRole="image"
-              source={bundledAsset(require('../../site/whip-install-qr.png'))}
+              source={bundledAsset(require('../../assets/reins/install-qr.png'))}
               resizeMode="contain"
               style={{ width: INSTALL_QR_SIZE, height: INSTALL_QR_SIZE, maxWidth: '100%' }}
             />

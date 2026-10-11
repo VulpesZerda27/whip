@@ -20,7 +20,7 @@ import {
 import type { CredentialRecoveryStatus } from '@/src/services/credentialVault';
 import { statusColor, useTheme } from '@/src/theme';
 import type { HostProfile } from '@/src/types';
-import { AgentStatusMedallion, hapticPress, HerdrMark, IconButton, ScreenHeader, StatusBadge, WhipMark } from './app-ui';
+import { AgentStatusMedallion, hapticPress, HerdrMark, IconButton, ScreenHeader, StatusBadge, ReinsMark } from './app-ui';
 import { GlassSurface } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -59,9 +59,9 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
   return (
     <View className="flex-1">
       <ScreenHeader
-        title="Whip"
+        title="Reins"
         subtitle={t('hosts.subtitle')}
-        left={<WhipMark size={40} />}
+        left={<ReinsMark size={40} />}
         right={<IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />}
       />
 

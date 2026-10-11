@@ -29,7 +29,7 @@ export function BrowserStartPage({
       contentContainerClassName="px-5 pb-8 pt-12"
       keyboardShouldPersistTaps="handled"
     >
-      <Text className="text-3xl font-semibold">Whip</Text>
+      <Text className="text-3xl font-semibold">Reins</Text>
       <Text className="mb-8 mt-2 text-muted-foreground">
         Where would you like to go?
       </Text>

@@ -912,7 +912,7 @@ export function HerdScreen({
                       Reverse Control
                     </Text>
                     <Text className="text-xs text-muted-foreground">
-                      Let this agent use Whip's browser and device tools,
+                      Let this agent use Reins's browser and device tools,
                       including location
                     </Text>
                   </View>

@@ -9,6 +9,7 @@ import {
 import {
   AccessibilityInfo,
   AppState,
+  Image,
   Platform,
   StyleSheet,
   View,
@@ -22,7 +23,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
-import { LocalSvg } from 'react-native-svg/css';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
@@ -106,20 +106,23 @@ export function AgentStatusAnimationProvider({
   );
 }
 
-export function WhipMark({
+export function ReinsMark({
   size,
   accessibilityLabel,
 }: {
   size: number;
   accessibilityLabel?: string;
 }) {
+  const { isDark } = useTheme();
   return (
-    <LocalSvg
+    <Image
       accessibilityLabel={accessibilityLabel}
       accessible={Boolean(accessibilityLabel)}
-      asset={bundledAsset(require('../../assets/whip-cyborg-hand-concept.svg'))}
-      height={size}
-      width={size}
+      source={bundledAsset(isDark
+        ? require('../../assets/reins/reins-icon-dark.png')
+        : require('../../assets/reins/reins-icon.png'))}
+      resizeMode="contain"
+      style={{ height: size, width: size, borderRadius: size / 4 }}
     />
   );
 }

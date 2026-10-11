@@ -1,14 +1,17 @@
 <p align="center">
-  <img src="assets/whip-cyborg-hand-concept.svg" alt="Whip app icon" width="128">
+  <img src="assets/reins/reins-icon.png" alt="Reins app icon" width="128">
 </p>
 
-<h1 align="center">Whip</h1>
+<h1 align="center">Reins</h1>
 
-> **Personal Whip Chat fork:** chat-first navigation, Codex/Claude launcher with
+> **Reins — independent fork of Whip:** chat-first navigation, Codex/Claude launcher with
 > server/model/effort selection, automatic review defaults, Android voice
-> dictation, favorite projects, saved drafts, resume, an attention inbox, and
+> dictation, favorite projects, saved drafts, an attention inbox, and
 > inline question/approval controls. See [Chat mode and APK installation](docs/chat-mode.md).
-> Upstream: [kosumic/whip](https://github.com/kosumic/whip).
+> Upstream: [kosumic/whip](https://github.com/kosumic/whip), by kosumic and contributors.
+> Modified in October 2026; renamed Reins on 11 October 2026. Licensed under
+> [AGPL-3.0-or-later](LICENSE), with original copyright and third-party notices retained.
+> The reference documentation below is inherited from Whip; use the fork installation guide above for Reins.
 
 <p align="center">
   <strong>Run your Herdr workflow from your phone or tablet.</strong><br>

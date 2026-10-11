@@ -62,7 +62,7 @@ export async function executeShizukuCommand(
   if (!native?.execute) {
     throw Object.assign(
       new Error(
-        'Privileged tools require an updated Android Whip build and Shizuku',
+        'Privileged tools require an updated Android Reins build and Shizuku',
       ),
       { code: 'device_unavailable' },
     );

@@ -14,7 +14,7 @@ import {
 import { cn } from '@/src/lib/utils';
 import { appGlassControlStyle, useTheme } from '@/src/theme';
 import type { GlobalSshKeyMaterial } from '@/src/types';
-import { hapticPress, IconButton, ScreenHeader, WhipMark } from './app-ui';
+import { hapticPress, IconButton, ScreenHeader, ReinsMark } from './app-ui';
 import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { Button } from './ui/button';
 import { Icon } from './ui/icon';
@@ -132,7 +132,7 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
         />
         <ScrollView className="flex-1" contentContainerClassName="px-5 pb-8">
           <View className="items-center pb-8 pt-8">
-            <WhipMark size={52} />
+            <ReinsMark size={52} />
             <Text className="mt-5 text-center text-2xl font-semibold">{t('pairing.chooseHeading')}</Text>
             <Text className="mt-2 max-w-[330px] text-center text-[15px] leading-[22px] text-muted-foreground">
               {t('pairing.chooseCopy')}
@@ -199,7 +199,7 @@ export function NewHostScreen({ onCancel, onManual, onPaired }: Props) {
       />
       <ScrollView className="flex-1" contentContainerClassName="px-5 pb-8">
         <View className="items-center pb-7 pt-8">
-          <WhipMark size={52} />
+          <ReinsMark size={52} />
           <Text className="mt-5 text-center text-2xl font-semibold">{t('pairing.heading')}</Text>
           <Text className="mt-2 max-w-[330px] text-center text-[15px] leading-[22px] text-muted-foreground">
             {t('pairing.intro')}
