@@ -64,6 +64,14 @@ react {
     autolinkLibrariesWithApp()
 }
 
+// React Native tracks JS/TS by default. Include bundled artwork so image-only
+// changes also regenerate the release bundle and its copied Android resources.
+tasks.withType(com.facebook.react.tasks.BundleHermesCTask).configureEach {
+    inputs.dir("${projectRoot}/assets")
+        .withPropertyName("bundledAppAssets")
+        .withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE)
+}
+
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
  *
