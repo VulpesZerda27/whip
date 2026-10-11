@@ -159,7 +159,10 @@ const [qr] = encode(installUrl);
 await save(
   'assets/reins/install-qr.png',
   await sharp(Buffer.from(toSvg(qr)))
-    .resize(720, 720)
+    .resize((qr.size + 2) * 16, (qr.size + 2) * 16)
+    .flatten({ background: '#ffffff' })
+    // toSvg includes one quiet module; add three for the standard four-module margin.
+    .extend({ top: 48, bottom: 48, left: 48, right: 48, background: '#ffffff' })
     .png()
     .toBuffer(),
 );
