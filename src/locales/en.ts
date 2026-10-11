@@ -1,5 +1,5 @@
 export const en = {
-  'usage.title': 'Reinsping time',
+  'usage.title': 'Time in Reins',
   'usage.axisHours': '{{value}}h',
   'usage.axisMinutes': '{{value}}m',
   'usage.empty': 'No usage in this range yet',
