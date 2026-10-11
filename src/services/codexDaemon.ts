@@ -361,6 +361,8 @@ export class CodexDaemonClient {
   private done = new Set<string>();
   private timer?: ReturnType<typeof setTimeout>;
   private running = false;
+  private epoch = 0;
+  private failures = 0;
   private unsubscribeWake?: () => void;
   private ticking?: Promise<void>;
   private refreshAt = 0;
@@ -384,6 +386,7 @@ export class CodexDaemonClient {
     this.listeners.forEach(listener => listener());
   }
   async rpc<T = CodexWire>(method: string, params: CodexWire = {}): Promise<T> {
+    const epoch = this.epoch;
     const requestConnection = this.connectionId;
     const expectedConnectionId = /^(turn\/|thread\/name\/)/.test(method)
       ? this.connectionId
@@ -394,6 +397,8 @@ export class CodexDaemonClient {
         JSON.stringify({ method, params, expectedConnectionId }),
       ),
     ) as { connectionId: string; result: T; eventCursor: number };
+    if (epoch !== this.epoch)
+      throw new Error('Discarded a reply from an obsolete Codex connection');
     if (
       requestConnection &&
       this.connectionId !== requestConnection &&
@@ -455,6 +460,8 @@ export class CodexDaemonClient {
   start() {
     if (this.running) return;
     this.running = true;
+    this.failures = 0;
+    this.publish({ error: undefined });
     this.refreshAt = 0;
     this.unsubscribeWake = this.native.subscribeCodexActivity?.(() => {
       void this.tick();
@@ -478,6 +485,7 @@ export class CodexDaemonClient {
     return this.ticking;
   }
   private async poll() {
+    const epoch = this.epoch;
     try {
       if (Date.now() >= this.refreshAt || !this.snapshot.connected) {
         await this.refresh();
@@ -486,6 +494,7 @@ export class CodexDaemonClient {
       const packet = JSON.parse(
         await this.native.codexCall('events', '{}'),
       ) as EventPacket;
+      if (!this.running || epoch !== this.epoch) return;
       if (packet.connectionId !== this.connectionId)
         throw new Error('Codex connection changed');
       for (const event of packet.events) this.event(event);
@@ -495,11 +504,15 @@ export class CodexDaemonClient {
       }));
       if (JSON.stringify(requests) !== JSON.stringify(this.snapshot.requests))
         this.publish({ requests });
+      this.failures = 0;
     } catch (error) {
-      this.offline(String(error));
+      // SSH reconnects can finish after an old poll has already failed. Ignore
+      // that generation, and allow one automatic retry before surfacing a fault.
+      if (this.running && epoch === this.epoch)
+        this.offline(++this.failures > 1 ? String(error) : undefined);
     }
   }
-  offline(error: string) {
+  offline(error?: string) {
     this.openThreads.clear();
     const chats = Object.fromEntries(
       Object.entries(this.snapshot.chats).map(([id, chat]) => [
@@ -511,6 +524,7 @@ export class CodexDaemonClient {
   }
   stop() {
     this.running = false;
+    this.epoch++;
     this.unsubscribeWake?.();
     this.unsubscribeWake = undefined;
     clearTimeout(this.timer);

@@ -79,6 +79,7 @@ const hosts = ['First', 'Second'].map(
 function setup() {
   const native = {};
   const sessions = {
+    restoreComplete: true,
     getClient: jest.fn(() => ({ native })),
     presentationSessions: hosts.map(host => ({
       id: `session-${host.id}`,
@@ -303,4 +304,32 @@ test('daemon Codex rows replace inherited pane rows while Claude keeps its origi
   expect(openCodex).toHaveBeenCalledWith('host-0','exact-id');
   act(()=>{ button('Open chat claude on First').props.onPress(); });
   expect(openClaude).toHaveBeenCalledWith({hostId:'host-0',paneId:'claude-pane'});
+});
+
+test('startup keeps chats visible with neutral loading, hides stale errors and automatic connect rows', async () => {
+  const { sessions, onShowChats } = setup();
+  Object.assign(sessions, { restoreComplete: false });
+  sessions.presentationSessions[0].connectionStatus = 'reconnecting';
+  Object.assign(sessions.presentationSessions[0].snapshot, { tabs: [] });
+  const codexHosts = [{ hostId: 'host-0', sessionId: 'session-host-0', name: 'First', snapshot: {
+    connected: false, error: 'Old disconnect error', requests: [], threads: [{ id: 'exact', name: 'Existing chat', cwd: '/project', updatedAt: 1, status: 'idle' }],
+  } }];
+  await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} codexHosts={codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[]} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
+  expect(button('Open chat Existing chat on First')).toBeDefined();
+  const scroll = renderer.root.findAllByType('ScrollView' as never).find(node => node.props.contentContainerStyle)!;
+  expect(scroll.findAll(n => n.props.accessibilityRole === 'alert')).toHaveLength(0);
+  expect(scroll.findAll(n => n.props.accessibilityLabel === 'Syncing chats')).toHaveLength(1);
+  expect(scroll.findAll(n => n.children.includes('Connect'))).toHaveLength(0);
+});
+
+test('an acknowledged Codex completion displays idle and drops out of Needs you', async () => {
+  const { sessions, onShowChats } = setup();
+  Object.assign(sessions.presentationSessions[0].snapshot, { tabs: [] });
+  const thread = { id: 'exact', name: 'Read chat', cwd: '/project', updatedAt: 12, status: 'done' as const };
+  const { updateCodexActivity } = require('../src/lib/codexInbox');
+  const library = { loaded: true, error: null, update: jest.fn(), value: updateCodexActivity(emptyChatLibrary, [{ hostId: 'host-0', threads: [thread] }]) };
+  const codexHosts = [{ hostId: 'host-0', sessionId: 'session-host-0', name: 'First', snapshot: { connected: true, requests: [], threads: [thread] } }];
+  await act(async () => { renderer = create(<ChatsScreen library={library} hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} codexHosts={codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[]} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
+  expect(button('Open chat Read chat on First').findByType('StatusBadge' as never).props.status).toBe('idle');
+  expect(JSON.stringify(renderer.toJSON())).not.toContain('Needs you (1)');
 });

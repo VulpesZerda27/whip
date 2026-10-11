@@ -553,3 +553,39 @@ test('steering messages remain user bubbles while retaining one backend turn ide
       .every(m => m.role === 'assistant'),
   ).toBe(true);
 });
+
+test('a transient startup failure retries quietly; persistent failures remain visible and recover', async () => {
+  jest.useFakeTimers();
+  const f = fixture();
+  const call = f.native.codexCall.getMockImplementation()!;
+  let fail = true;
+  f.native.codexCall.mockImplementation(async (op, raw) => {
+    if (fail) throw new Error('Unavailable');
+    return call(op, raw);
+  });
+  try {
+    f.client.start();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(f.client.snapshot.error).toBeUndefined();
+    expect(f.client.snapshot.connected).toBe(false);
+    await jest.advanceTimersByTimeAsync(4000);
+    expect(f.client.snapshot.error).toContain('Unavailable');
+    fail = false;
+    await jest.advanceTimersByTimeAsync(4000);
+    expect(f.client.snapshot.connected).toBe(true);
+    expect(f.client.snapshot.error).toBeUndefined();
+  } finally { f.client.stop(); jest.useRealTimers(); }
+});
+
+test('a late failure from a stopped connection cannot overwrite reconnect loading', async () => {
+  const f = fixture();
+  let reject!: (error: Error) => void;
+  f.native.codexCall.mockImplementationOnce(() => new Promise((_resolve, rejectRequest) => { reject = rejectRequest; }));
+  f.client.start();
+  f.client.stop();
+  f.client.offline();
+  reject(new Error('Old connection failed'));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  expect(f.client.snapshot.error).toBeUndefined();
+  expect(f.client.snapshot.connected).toBe(false);
+});

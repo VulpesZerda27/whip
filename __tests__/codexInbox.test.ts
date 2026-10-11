@@ -63,3 +63,14 @@ test('elicitation preserves typed values and rejects missing or out-of-range ans
     elicitationContent(schema, { ok: 'true', count: '1', name: 'missing' }),
   ).toThrow('name');
 });
+
+test('Herdr receipts require an exact integration-owned ID and never infer identity from cwd, title, or focus', () => {
+  const { herdrCodexReceipts } = require('../src/lib/codexInbox');
+  const agent = { agent: 'codex', agent_status: 'idle', pane_id: 'p', state_change_seq: 4, cwd: '/project', focused: true,
+    agent_session: { agent: 'codex', source: 'herdr:codex', kind: 'id', value: 'a' } };
+  expect([...herdrCodexReceipts([agent]).keys()]).toEqual(['a']);
+  for (const changes of [{ agent_session: undefined }, { agent_status: 'done' }, { agent_status: 'working' }, { launch_pending: true }, { agent_session: { ...agent.agent_session, kind: 'path' } }]) {
+    expect(herdrCodexReceipts([{ ...agent, ...changes }]).size).toBe(0);
+  }
+  expect(herdrCodexReceipts([agent, { ...agent, pane_id: 'other', agent_status: 'working' }]).size).toBe(0);
+});

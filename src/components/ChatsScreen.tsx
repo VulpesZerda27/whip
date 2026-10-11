@@ -8,7 +8,7 @@ import {
   Keyboard,
   Platform,
 } from 'react-native';
-import { MessageCircle, Plus, Server, Star, X } from 'lucide-react-native';
+import { MessageCircle, Plus, Star, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
@@ -42,6 +42,7 @@ import {
   type ChatTarget,
 } from '../services/chatLibrary';
 import { codexNeedsAttention } from '../lib/codexInbox';
+import { chatSyncState } from '../lib/chatSync';
 import { chatNeedsAttention } from '../lib/chatInbox';
 import { chatStatusPriority } from '../lib/chatInbox';
 import { fetchChatCatalog, type ChatModelOption } from '../services/chatCatalog';
@@ -104,6 +105,18 @@ export function ChatsScreen({
   const [favoriteSaved, setFavoriteSaved] = useState(false);
   const [selectedFavorite, setSelectedFavorite] = useState<string | null>(null);
   const saved = library?.value ?? emptyChatLibrary;
+  const syncStates = sessions.presentationSessions
+    .filter(item => !filter || item.hostId === filter)
+    .map(item => ({
+      id: item.id,
+      name: hostDisplayName(item.host),
+      ...chatSyncState(
+        item,
+        codexHosts?.find(h => h.sessionId === item.id)?.snapshot,
+        !sessions.restoreComplete,
+      ),
+    }));
+  const syncing = !sessions.restoreComplete || syncStates.some(item => item.loading);
   const serverLabel = (id: string) => {
     const savedHost = hosts.find(item => item.id === id);
     return savedHost ? hostDisplayName(savedHost) : 'Server removed';
@@ -140,7 +153,11 @@ export function ChatsScreen({
       const activity = saved.activity[chatKey(codex.hostId, codexChatKey(thread.id))];
       const pending = codex.snapshot.requests.some(r => r.params.threadId === thread.id && r.params.isBlocking !== false);
       const attention = codexNeedsAttention(thread, pending, activity);
-      const status = pending ? 'blocked' : thread.status === 'idle' && attention ? 'done' : thread.status;
+      const status = pending
+        ? 'blocked'
+        : thread.status === 'idle' || thread.status === 'done'
+          ? attention ? 'done' : 'idle'
+          : thread.status;
       allAgents.push({session: live, thread, attention, agent: {pane_id: codexChatKey(thread.id), terminal_id: codexChatKey(thread.id), tab_id: '', workspace_id: '', agent: 'codex', agent_status: status} as AgentInfo});
     }
   }
@@ -536,32 +553,22 @@ export function ChatsScreen({
             {error}
           </Text>
         ) : null}
-        {hosts
-          .filter(item => !filter || item.id === filter)
-          .map(item => {
-            const live = sessions.presentationSessions.find(
-              value => value.hostId === item.id,
-            );
-            if (live?.connectionStatus === 'ready') return null;
-            return (
-              <Button
-                key={item.id}
-                disabled={busy || sessions.connectingHostIds.has(item.id)}
-                variant="outline"
-                className="mb-3 h-auto flex-row justify-between rounded-2xl p-4"
-                onPress={() => connect(item)}
-              >
-                <Server size={18} color={colors.textSecondary} />
-                <Text className="flex-1 px-3">{hostDisplayName(item)}</Text>
-                <Text className="text-sm text-muted-foreground">
-                  {busy || sessions.connectingHostIds.has(item.id)
-                    ? 'Connecting…'
-                    : 'Connect'}
-                </Text>
-              </Button>
-            );
-          })}
-        {(codexHosts ?? []).filter(item => !filter || item.hostId === filter).map(item => item.snapshot.error ? <Text key={item.hostId} accessibilityRole="alert" className="mb-3 text-sm text-destructive">{item.name} · Codex: {item.snapshot.error}</Text> : null)}
+        {syncing ? (
+          <View accessibilityRole="progressbar" accessibilityLabel="Syncing chats" className="mb-3 flex-row items-center gap-2 py-2">
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+            <Text className="text-sm text-muted-foreground">Syncing chats…</Text>
+          </View>
+        ) : null}
+        {syncStates.filter(item => item.error).map(item => (
+          <View key={item.id} className="mb-3 gap-2">
+            <Text accessibilityRole="alert" className="text-sm text-muted-foreground">
+              {item.name}: {item.error}
+            </Text>
+            <Button variant="secondary" className="self-start rounded-full" onPress={onManageHosts}>
+              <Text>Manage servers</Text>
+            </Button>
+          </View>
+        ))}
         {agents.map(({ session: agentSession, agent, thread, attention }) => {
           const snapshot = sessionSnapshot(agentSession);
           const tab = snapshot.tabs.find(item => item.tab_id === agent.tab_id);
@@ -609,7 +616,7 @@ export function ChatsScreen({
                 {hostDisplayName(agentSession.host)} ·{' '}
                 {thread?.cwd.split('/').filter(Boolean).at(-1) || workspace?.label || 'Workspace'} ·{' '}
                 {agent.agent === 'codex' ? 'Codex' : 'Claude'}
-                {agentSession.connectionStatus === 'ready' ? '' : ' · Offline'}
+                {chatSyncState(agentSession, undefined, !sessions.restoreComplete).loading ? ' · Syncing…' : agentSession.connectionStatus === 'ready' ? '' : ' · Offline'}
               </Text>
             </Button>
           );
@@ -618,20 +625,20 @@ export function ChatsScreen({
           <View className="items-center px-6 py-14">
             <MessageCircle size={40} color={colors.textSecondary} />
             <Text className="mt-5 text-lg font-semibold">
-              {needsYouOnly ? 'All caught up' : 'A little room to think'}
+              {syncing ? 'Loading your chats' : needsYouOnly ? 'All caught up' : 'A little room to think'}
             </Text>
             <Text className="mt-2 text-center text-sm leading-6 text-muted-foreground">
-              {needsYouOnly
+              {syncing ? 'Your servers reconnect automatically. Chats appear here as they arrive.' : needsYouOnly
                 ? 'No agents need your attention in this view.'
                 : 'Connect a server, then start a Codex or Claude conversation. Your existing agents appear here too.'}
             </Text>
-            <Button
+            {!syncing ? <Button
               variant="secondary"
               className="mt-5 rounded-full"
               onPress={onManageHosts}
             >
               <Text>Manage servers</Text>
-            </Button>
+            </Button> : null}
           </View>
         ) : null}
       </ScrollView>

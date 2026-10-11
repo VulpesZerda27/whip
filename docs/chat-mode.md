@@ -118,6 +118,19 @@ activity seen; responses received while the phone is locked stay unread. Tapping
 a Codex or Claude notification opens that conversation in chat mode. Notification
 delivery uses the existing notification settings and Android permissions.
 
+On startup, Chats keeps existing rows visible and shows **Syncing chats…** while
+saved servers reconnect. Manage connections in **Servers**; Chats only shows a
+connection problem when loading or automatic retries have actually failed.
+
+Codex completion badges also follow Herdr's seen state on other terminals. Reins
+confirms the receipt against fresh server snapshots and the exact conversation
+ID, then clears **Done / New** within a few seconds while the app is open. Cached
+offline snapshots, blocked requests and newer completions cannot reuse an old
+receipt. This requires Herdr's Codex integration to have registered the session
+ID; older unlinked terminals and sessions already closed while Reins was offline
+cannot supply a read receipt. Opening those conversations in Reins clears them
+locally. No Codex modification or title/directory matching is involved.
+
 Chat shows **Working**, **Needs you**, or **Offline** status, with **Stop** while
 working and **Reconnect** when offline. Stop interrupts the exact Codex turn;
 Claude retains its existing Escape-based control.

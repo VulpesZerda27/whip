@@ -105,7 +105,7 @@ export function useCodexHosts(
       else {
         client.stop();
         if (session.connectionStatus !== 'ready')
-          client.offline('Server disconnected. Reconnect to continue.');
+          client.offline();
       }
       return () => {
         stop();

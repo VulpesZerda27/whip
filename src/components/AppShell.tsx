@@ -38,6 +38,7 @@ import { useCodexHosts } from '../hooks/useCodexHosts';
 import { CodexChatScreen } from './CodexChatScreen';
 import { useAppForeground } from '../hooks/useAppForeground';
 import { updateCodexActivity } from '../lib/codexInbox';
+import { useCodexReadSync } from '../hooks/useCodexReadSync';
 import { useCodexNotificationNavigation } from '../hooks/useCodexNotificationNavigation';
 import type { useAgentNotifications } from '../hooks/useAgentNotifications';
 import { codexChatKey } from '../services/codexDaemon';
@@ -119,6 +120,7 @@ export function AppShell({
   );
   const chatLibrary = useChatLibrary();
   const foreground = useAppForeground();
+  useCodexReadSync(codexHosts, sessions, chatLibrary, foreground && !security.locked);
   const {loaded: libraryLoaded, update: updateLibrary} = chatLibrary;
   const codexRevision = codexHosts.map(h => `${h.hostId}:${h.snapshot.revision}`).join('|');
   useEffect(() => {
