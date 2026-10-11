@@ -38,6 +38,7 @@ import { useCodexHosts } from '../hooks/useCodexHosts';
 import { CodexChatScreen } from './CodexChatScreen';
 import { useAppForeground } from '../hooks/useAppForeground';
 import { updateCodexActivity } from '../lib/codexInbox';
+import { openCodexTerminal } from '../lib/codexHerdr';
 import { useCodexReadSync } from '../hooks/useCodexReadSync';
 import { useCodexNotificationNavigation } from '../hooks/useCodexNotificationNavigation';
 import type { useAgentNotifications } from '../hooks/useAgentNotifications';
@@ -341,8 +342,7 @@ export function AppShell({
                 draftRequest={remoteFiles.draftRequest?.hostSessionId===codexHost.sessionId ? remoteFiles.draftRequest : undefined}
                 onConsumeDraft={remoteFiles.consumeDraft}
                 onTerminal={async (threadId,cwd)=>{
-                  const workspace=await sessions.createWorkspace(codexHost.sessionId,'Codex',cwd);
-                  await sessions.launchTab(codexHost.sessionId,workspace.workspace_id,'Codex', {type:'agent',kind:'codex',args:['resume',threadId],reverseControl:false});
+                  await openCodexTerminal(sessions, codexHost.sessionId, threadId, cwd);
                   setCodexSelection(null);
                   navigation.showTerminal(codexHost.sessionId);
                 }}

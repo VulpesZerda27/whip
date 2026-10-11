@@ -712,16 +712,18 @@ export class CodexDaemonClient {
     this.metadata.set(thread.id, thread);
     this.turns.set(thread.id, []);
     this.openThreads.add(thread.id);
-    if (name.trim()) {
-      try {
-        await this.rpc('thread/name/set', {
-          threadId: thread.id,
-          name: name.trim(),
-        });
-        thread.name = name.trim();
-      } catch {
-        /* A rename failure must never duplicate an already-created conversation. */
-      }
+    // Giving a new thread a name also makes Codex persist its empty history,
+    // so a Herdr TUI can resume it before the user's first message. Use the
+    // selected folder as the default title; never send a synthetic prompt.
+    const title = name.trim() || cwd.split('/').filter(Boolean).at(-1) || 'Codex';
+    try {
+      await this.rpc('thread/name/set', {
+        threadId: thread.id,
+        name: title,
+      });
+      thread.name = title;
+    } catch {
+      /* A rename failure must never duplicate an already-created conversation. */
     }
     this.project(thread.id);
     this.publish({

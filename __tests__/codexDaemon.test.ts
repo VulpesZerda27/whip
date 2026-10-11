@@ -68,6 +68,14 @@ function fixture() {
   };
 }
 
+test('an unnamed new chat gets a durable folder title before Herdr resumes it, without sending a prompt', async () => {
+  const f = fixture();
+  const created = await f.client.create('/home/test/Projects/mobile/', '', '', 'default');
+  expect(created.name).toBe('mobile');
+  expect(f.calls.map(c => c.payload.method)).toEqual(['thread/start', 'thread/name/set']);
+  expect(f.calls[1].payload.params).toEqual({ threadId: 'new-thread', name: 'mobile' });
+});
+
 test('discovery lists exact thread IDs without resuming or relying on identical project directories', async () => {
   const f = fixture();
   await f.client.refresh();

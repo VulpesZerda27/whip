@@ -232,7 +232,7 @@ export function useSessionTerminalLifecycle({
       workspaceId: string,
       tabName: string,
       launch: TabLaunchIntent,
-      presentation: 'chat' | 'terminal' = 'terminal',
+      presentation: 'chat' | 'terminal' | 'background' = 'terminal',
     ) => {
       const { runtime, hostId } = await prepareAgentPreferences(sessionId);
       await launchTabAndOpenCreatedTab(
@@ -241,6 +241,7 @@ export function useSessionTerminalLifecycle({
         tabName,
         launch,
         (created: TabCreationResult) => {
+          if (presentation === 'background') return;
           navigation.selectPane(null);
           terminals.openPane(sessionId, created.root_pane);
           select(sessionId, 'terminal');

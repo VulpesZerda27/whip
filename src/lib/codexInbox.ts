@@ -4,21 +4,28 @@ import { chatKey } from '../services/chatLibrary';
 import { codexChatKey } from '../services/codexDaemon';
 import type { AgentInfo } from '../types';
 
+export function herdrCodexThreadId(agent: Pick<AgentInfo, 'agent' | 'agent_session'>): string | undefined {
+  const ref = agent.agent_session;
+  return agent.agent === 'codex' && ref?.agent === 'codex' &&
+    ref.source === 'herdr:codex' && ref.kind === 'id' && ref.value
+    ? ref.value : undefined;
+}
+
+export function herdrCodexThreadIds(agents: AgentInfo[]): Set<string> {
+  return new Set(agents.flatMap(agent => {
+    const id = herdrCodexThreadId(agent);
+    return id ? [id] : [];
+  }));
+}
+
 // Herdr's idle means seen; done means idle but unseen. Only an explicit
 // integration-owned conversation ID can connect that receipt to a daemon thread.
 export function herdrCodexReceipts(agents: AgentInfo[]): Map<string, string> {
   const groups = new Map<string, AgentInfo[]>();
   for (const agent of agents) {
-    const ref = agent.agent_session;
-    if (
-      agent.agent !== 'codex' ||
-      ref?.agent !== 'codex' ||
-      ref.source !== 'herdr:codex' ||
-      ref.kind !== 'id' ||
-      !ref.value
-    )
-      continue;
-    groups.set(ref.value, [...(groups.get(ref.value) ?? []), agent]);
+    const id = herdrCodexThreadId(agent);
+    if (!id) continue;
+    groups.set(id, [...(groups.get(id) ?? []), agent]);
   }
   return new Map(
     [...groups].flatMap(([id, panes]) =>

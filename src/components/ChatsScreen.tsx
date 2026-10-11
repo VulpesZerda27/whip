@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   ScrollView,
   View,
@@ -41,7 +42,7 @@ import {
   type ChatFavorite,
   type ChatTarget,
 } from '../services/chatLibrary';
-import { codexNeedsAttention } from '../lib/codexInbox';
+import { codexNeedsAttention, herdrCodexThreadId } from '../lib/codexInbox';
 import { chatSyncState } from '../lib/chatSync';
 import { chatNeedsAttention } from '../lib/chatInbox';
 import { chatStatusPriority } from '../lib/chatInbox';
@@ -138,27 +139,42 @@ export function ChatsScreen({
     workspaceSelection?.hostId === host?.id
       ? (workspaceSelection?.workspaceId ?? '')
       : (workspaces[0]?.workspace_id ?? '');
-  const allAgents: {session: (typeof sessions.presentationSessions)[number]; agent: AgentInfo; thread?: CodexThread; attention?: boolean}[] = sessions.presentationSessions.flatMap(item =>
-    item.snapshot.agents
-      .filter(
-        agent =>
-          isChatProvider(agent.agent) && !(codexHosts && agent.agent === 'codex') && (!filter || item.hostId === filter),
-      )
-      .map(agent => ({ session: item, agent })),
-  );
-  for (const codex of codexHosts ?? []) {
-    const live = sessions.presentationSessions.find(item => item.id === codex.sessionId);
-    if (!live || (filter && codex.hostId !== filter)) continue;
-    for (const thread of codex.snapshot.threads) {
-      const activity = saved.activity[chatKey(codex.hostId, codexChatKey(thread.id))];
-      const pending = codex.snapshot.requests.some(r => r.params.threadId === thread.id && r.params.isBlocking !== false);
-      const attention = codexNeedsAttention(thread, pending, activity);
-      const status = pending
-        ? 'blocked'
+  // Herdr owns list membership; the daemon supplies the exact conversation's
+  // contents and activity. Saved daemon history alone never creates a row.
+  const allAgents: {session: (typeof sessions.presentationSessions)[number]; agent: AgentInfo; thread?: CodexThread; attention?: boolean; terminalOnly?: boolean}[] = [];
+  for (const live of sessions.presentationSessions) {
+    if (filter && live.hostId !== filter) continue;
+    const codex = codexHosts?.find(item => item.sessionId === live.id);
+    const listed = new Set<string>();
+    for (const agent of live.snapshot.agents) {
+      if (!isChatProvider(agent.agent)) continue;
+      if (agent.agent !== 'codex' || !codexHosts) {
+        allAgents.push({ session: live, agent });
+        continue;
+      }
+      const id = herdrCodexThreadId(agent);
+      if (!id) {
+        allAgents.push({ session: live, agent, terminalOnly: true });
+        continue;
+      }
+      if (listed.has(id)) continue;
+      listed.add(id);
+      const known = codex?.snapshot.threads.find(thread => thread.id === id);
+      const thread: CodexThread = known ?? {
+        id,
+        name: live.snapshot.tabs?.find(tab => tab.tab_id === agent.tab_id)?.label || 'Codex',
+        cwd: agent.cwd || '',
+        updatedAt: 0,
+        status: agent.agent_status === 'unknown' ? 'idle' : agent.agent_status,
+      };
+      const activity = saved.activity[chatKey(live.hostId, codexChatKey(id))];
+      const pending = codex?.snapshot.requests.some(r => r.params.threadId === id && r.params.isBlocking !== false) ?? false;
+      const attention = known ? codexNeedsAttention(thread, pending, activity) : chatNeedsAttention(agent, saved.activity[chatKey(live.hostId, agent.pane_id)]);
+      const status = pending ? 'blocked'
         : thread.status === 'idle' || thread.status === 'done'
           ? attention ? 'done' : 'idle'
           : thread.status;
-      allAgents.push({session: live, thread, attention, agent: {pane_id: codexChatKey(thread.id), terminal_id: codexChatKey(thread.id), tab_id: '', workspace_id: '', agent: 'codex', agent_status: status} as AgentInfo});
+      allAgents.push({session: live, thread, attention, agent: { ...agent, pane_id: codexChatKey(id), agent_status: status }});
     }
   }
   const needsAttention = ({session: item, agent, attention}: (typeof allAgents)[number]) => attention ?? chatNeedsAttention(agent, saved.activity[chatKey(item.hostId, agent.pane_id)]);
@@ -325,17 +341,6 @@ export function ChatsScreen({
       }
       // Save before creating remote resources; a storage failure must not duplicate a launch.
       await saveChatLaunchPreferences({ ...preferences, hostId: host.id });
-      if (provider === 'codex' && codexHosts && onOpenCodex) {
-        const backend = codexHosts.find(item => item.hostId === host.id);
-        if (!backend) throw new Error('Codex server is not connected.');
-        let cwd = directory.trim() || workspaceDirectory(selectedWorkspaceId) || '~';
-        if (cwd === '~' || cwd.startsWith('~/')) cwd = (await native.remoteHome()) + cwd.slice(1);
-        const folder = await native.listDirectory(cwd);
-        const thread = await backend.client.create(folder.path, name.trim(), options.model, options.effort);
-        setCreating(false);
-        onOpenCodex(host.id, thread.id);
-        return;
-      }
       const favoriteWorkspace =
         selectedFavorite && directory.trim()
           ? workspaces.find(
@@ -357,6 +362,26 @@ export function ChatsScreen({
       // Keep an already-created workspace selected if a later launch fails.
       setWorkspaceSelection({ hostId: host.id, workspaceId: workspace });
       setDirectory('');
+      if (provider === 'codex' && codexHosts && onOpenCodex) {
+        const backend = codexHosts.find(item => item.hostId === host.id);
+        if (!backend) throw new Error('Codex server is not connected.');
+        let cwd = directory.trim() || workspaceDirectory(workspace) || '~';
+        if (cwd === '~' || cwd.startsWith('~/')) cwd = (await native.remoteHome()) + cwd.slice(1);
+        const folder = await native.listDirectory(cwd);
+        const thread = await backend.client.create(folder.path, name.trim(), options.model, options.effort);
+        try {
+          await sessions.launchTab(session.id, workspace, name.trim() || 'Codex', {
+            type: 'agent', kind: 'codex', args: ['resume', thread.id], reverseControl: false,
+          }, 'background');
+        } catch (reason) {
+          // Keep the already-created conversation accessible and never replay
+          // an ambiguous terminal launch automatically.
+          Alert.alert('Conversation created', `Herdr could not finish opening its terminal: ${String(reason)}\n\nUse Open terminal in this chat to finish setup. It appears in the chat list once open in Herdr.`);
+        }
+        setCreating(false);
+        onOpenCodex(host.id, thread.id);
+        return;
+      }
       await sessions.launchTab(session.id, workspace, name.trim(), intent, 'chat');
       setCreating(false);
     } catch (reason) {
@@ -569,7 +594,7 @@ export function ChatsScreen({
             </Button>
           </View>
         ))}
-        {agents.map(({ session: agentSession, agent, thread, attention }) => {
+        {agents.map(({ session: agentSession, agent, thread, attention, terminalOnly }) => {
           const snapshot = sessionSnapshot(agentSession);
           const tab = snapshot.tabs.find(item => item.tab_id === agent.tab_id);
           const workspace = snapshot.workspaces.find(
@@ -580,9 +605,10 @@ export function ChatsScreen({
               key={`${agentSession.id}:${agent.pane_id}`}
               variant="outline"
               className="mb-3 h-auto flex-col items-start rounded-2xl p-4"
-              accessibilityLabel={`Open chat ${thread?.name || tab?.label || agent.agent} on ${hostDisplayName(agentSession.host)}`}
+              accessibilityLabel={`${terminalOnly ? 'Open terminal' : 'Open chat'} ${thread?.name || tab?.label || agent.agent} on ${hostDisplayName(agentSession.host)}`}
               onPress={() => {
-                if (thread && onOpenCodex) onOpenCodex(agentSession.hostId, thread.id);
+                if (terminalOnly) sessions.openAgentTerminal(agentSession.id, agent);
+                else if (thread && onOpenCodex) onOpenCodex(agentSession.hostId, thread.id);
                 else if (onOpenChat)
                   void onOpenChat({
                     hostId: agentSession.hostId,
@@ -616,6 +642,7 @@ export function ChatsScreen({
                 {hostDisplayName(agentSession.host)} ·{' '}
                 {thread?.cwd.split('/').filter(Boolean).at(-1) || workspace?.label || 'Workspace'} ·{' '}
                 {agent.agent === 'codex' ? 'Codex' : 'Claude'}
+                {terminalOnly ? ' · Terminal (chat link unavailable)' : ''}
                 {chatSyncState(agentSession, undefined, !sessions.restoreComplete).loading ? ' · Syncing…' : agentSession.connectionStatus === 'ready' ? '' : ' · Offline'}
               </Text>
             </Button>

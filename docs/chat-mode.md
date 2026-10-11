@@ -11,8 +11,8 @@ on each saved server and within conversations.
 1. Add your SSH servers under **Servers**, using the same host, port, username,
    key/password and Herdr session name as official Whip. Tailscale on the phone
    must be connected if you use Tailnet addresses.
-2. Open **Chats** and connect the servers you want to use. Chats merges existing
-   Codex and Claude agents across those connections; the server chips filter it.
+2. Open **Chats**. Saved servers reconnect automatically. Chats shows Codex and
+   Claude agents currently open in their Herdr sessions; the server chips filter it.
 3. Tap **+**. Choose the server, provider, model and effort. Choose an existing
    Herdr workspace or pick Home (`~`), `~/Projects`, or a project folder fetched
    from that server. The Projects choices appear only when the folder exists.
@@ -54,10 +54,16 @@ the app.
 
 ## Codex shared daemon
 
-As of 1.8.11, Chats discovers Codex conversations from each server’s shared daemon
-and uses its actual thread IDs. Conversation titles, directories, terminal pane
-IDs, and inherited hook environment variables are not identity fallbacks. This
-also lists persisted conversations without a currently open desktop terminal.
+Chats uses Herdr's open agents to determine list membership and the shared Codex
+daemon for conversation contents. Only exact integration-owned thread IDs link
+the two. Conversation titles, directories, terminal pane IDs, and inherited hook
+environment variables are not identity fallbacks. Saved daemon history remains
+on the server but does not add chat rows or new completion notifications.
+Closing a Herdr pane removes its row after the next host update; multiple panes
+for the same Codex conversation share one row per server. Reconnect keeps the
+last known open agents visible until a fresh snapshot arrives. Older Codex
+terminals without an authoritative conversation ID have a labelled Terminal
+entry instead of being guessed onto a saved conversation.
 Claude continues using its existing Herdr integration and transcript backend.
 
 Whip connects through an exec channel on the existing authenticated SSH connection
@@ -76,8 +82,13 @@ The displayed chat stays tied to its thread even if a desktop terminal switches 
 another conversation. This does not repair upstream Herdr’s terminal-pane mapping;
 the optional Herdr terminal view still has that upstream limitation.
 
-New Codex chats run without creating a terminal pane. **Open terminal** explicitly
-creates a terminal resuming the same thread. Chat supports text, image/file
+New Codex chats also create a Herdr tab resuming that exact daemon thread. Naming
+the empty thread persists it before the terminal resumes it; an omitted name
+defaults to the selected folder's name. No synthetic user prompt is sent.
+**Open terminal** reuses its existing pane, or creates one if it has since closed.
+If terminal startup fails after conversation creation, Reins keeps that exact
+conversation open, reports the issue and never automatically repeats the launch.
+Chat supports text, image/file
 attachments, dictation, stop, guidance during work, model/effort selection, read
 aloud, file previews, and web links. Command/file approvals, permission requests,
 agent questions, and MCP form/website requests have structured controls. Unknown
@@ -250,6 +261,14 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.17 limits Chats to open Herdr agents, scopes new Codex alerts to the
+same membership, and creates a Herdr tab for new Codex chats. All 2,068 JavaScript
+tests pass, including closing/switching panes, duplicate and unlinked IDs,
+metadata arriving late, new-chat launch failures, and reusing existing terminals.
+An isolated live check created an empty daemon conversation, persisted its name,
+and resumed it in Herdr with the exact ID and selected effort. The test sent no
+agent prompt; its named test session and conversation were cleaned up afterward.
 
 Version 1.8.16 opens newly launched Claude agents in Chat, treats a confirmed
 blocked startup as a question, and handles its workspace-trust screen inline.

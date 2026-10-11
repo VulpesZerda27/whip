@@ -122,7 +122,7 @@ export interface SessionRuntimeController {
     workspaceId: string,
     tabName: string,
     launch: TabLaunchIntent,
-    presentation?: 'chat' | 'terminal',
+    presentation?: 'chat' | 'terminal' | 'background',
   ) => Promise<void>;
   startServer: (sessionId: string) => Promise<void>;
 }

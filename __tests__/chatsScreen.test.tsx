@@ -1,3 +1,4 @@
+import { Alert } from 'react-native';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { ChatsScreen } from '../src/components/ChatsScreen';
 import { checkChatReadiness } from '../src/services/chatReadiness';
@@ -16,6 +17,7 @@ jest.mock('react-native', () => ({
   KeyboardAvoidingView: 'KeyboardAvoidingView',
   ActivityIndicator: 'Spinner',
   Platform: { OS: 'android' },
+  Alert: { alert: jest.fn() },
 }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
@@ -77,7 +79,7 @@ const hosts = ['First', 'Second'].map(
     ({ id: `host-${index}`, name, host: 'example.test' }) as HostProfile,
 );
 function setup() {
-  const native = {};
+  const native = { remoteHome: jest.fn(async () => '/home/test'), listDirectory: jest.fn(async (path: string) => ({ path })) };
   const sessions = {
     restoreComplete: true,
     getClient: jest.fn(() => ({ native })),
@@ -95,6 +97,7 @@ function setup() {
     })),
     connectingHostIds: new Set(),
     launchTab: jest.fn(async (): Promise<void> => {}),
+    openAgentTerminal: jest.fn(),
     createWorkspace: jest.fn(async () => ({ workspace_id: 'new-workspace' })),
   };
   return { sessions, onShowChats: jest.fn() };
@@ -292,17 +295,20 @@ test('chats sort blocked, done, working, then idle', async () => {
   expect(chats.map(chat => chat.find(node => String(node.type) === 'StatusBadge').props.status)).toEqual(['blocked', 'done', 'working', 'idle']);
 });
 
-test('daemon Codex rows replace inherited pane rows while Claude keeps its original target', async () => {
+test('only open Herdr conversations are listed, deduplicated by exact Codex ID, with terminal access for unlinked agents', async () => {
   const {sessions,onShowChats}=setup();
   Object.assign(sessions.presentationSessions[0].snapshot,{
-    agents:[{agent:'claude',agent_status:'idle',pane_id:'claude-pane',tab_id:'claude-tab',workspace_id:'workspace-host-0'},{agent:'codex',agent_status:'working',pane_id:'wrong-pane',tab_id:'wrong-tab'}],
+    agents:[{agent:'claude',agent_status:'idle',pane_id:'claude-pane',tab_id:'claude-tab',workspace_id:'workspace-host-0'},{agent:'codex',agent_status:'working',pane_id:'wrong-pane',tab_id:'wrong-tab'}, codexAgent('exact-id'), codexAgent('exact-id', 'second-pane')],
     tabs:[{tab_id:'claude-tab',label:'Claude existing'},{tab_id:'wrong-tab',label:'Wrong inherited association'}],
   });
-  const codexHosts=[{hostId:'host-0',sessionId:'session-host-0',name:'First',snapshot:{threads:[{id:'exact-id',name:'Codex exact',cwd:'/project',updatedAt:12,status:'working'}],requests:[]}}];
+  const codexHosts=[{hostId:'host-0',sessionId:'session-host-0',name:'First',snapshot:{threads:[{id:'exact-id',name:'Codex exact',cwd:'/project',updatedAt:12,status:'working'}, {id:'closed-history',name:'Closed old history',cwd:'/project',updatedAt:15,status:'blocked'}],requests:[]}}];
   const openClaude=jest.fn(),openCodex=jest.fn();
   await act(async()=>{renderer=create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} onOpenChat={openClaude} onOpenCodex={openCodex} codexHosts={codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[]}/>);});
   const rows=renderer.root.findAll(n=>String(n.type)==='Button' && String(n.props.accessibilityLabel).startsWith('Open chat '));
   expect(rows).toHaveLength(2);
+  expect(button('Open chat Closed old history on First')).toBeUndefined();
+  act(() => { button('Open terminal codex on First').props.onPress(); });
+  expect(sessions.openAgentTerminal).toHaveBeenCalledWith('session-host-0', expect.objectContaining({ pane_id: 'wrong-pane' }));
   act(()=>{ button('Open chat Codex exact on First').props.onPress(); });
   expect(openCodex).toHaveBeenCalledWith('host-0','exact-id');
   act(()=>{ button('Open chat claude on First').props.onPress(); });
@@ -313,7 +319,7 @@ test('startup keeps chats visible with neutral loading, hides stale errors and a
   const { sessions, onShowChats } = setup();
   Object.assign(sessions, { restoreComplete: false });
   sessions.presentationSessions[0].connectionStatus = 'reconnecting';
-  Object.assign(sessions.presentationSessions[0].snapshot, { tabs: [] });
+  Object.assign(sessions.presentationSessions[0].snapshot, { tabs: [], agents: [codexAgent('exact')] });
   const codexHosts = [{ hostId: 'host-0', sessionId: 'session-host-0', name: 'First', snapshot: {
     connected: false, error: 'Old disconnect error', requests: [], threads: [{ id: 'exact', name: 'Existing chat', cwd: '/project', updatedAt: 1, status: 'idle' }],
   } }];
@@ -327,7 +333,7 @@ test('startup keeps chats visible with neutral loading, hides stale errors and a
 
 test('an acknowledged Codex completion displays idle and drops out of Needs you', async () => {
   const { sessions, onShowChats } = setup();
-  Object.assign(sessions.presentationSessions[0].snapshot, { tabs: [] });
+  Object.assign(sessions.presentationSessions[0].snapshot, { tabs: [], agents: [codexAgent('exact')] });
   const thread = { id: 'exact', name: 'Read chat', cwd: '/project', updatedAt: 12, status: 'done' as const };
   const { updateCodexActivity } = require('../src/lib/codexInbox');
   const library = { loaded: true, error: null, update: jest.fn(), value: updateCodexActivity(emptyChatLibrary, [{ hostId: 'host-0', threads: [thread] }]) };
@@ -335,4 +341,62 @@ test('an acknowledged Codex completion displays idle and drops out of Needs you'
   await act(async () => { renderer = create(<ChatsScreen library={library} hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} codexHosts={codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[]} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
   expect(button('Open chat Read chat on First').findByType('StatusBadge' as never).props.status).toBe('idle');
   expect(JSON.stringify(renderer.toJSON())).not.toContain('Needs you (1)');
+});
+
+function codexAgent(id: string, pane = 'codex-pane') {
+  return { agent: 'codex', agent_status: 'idle', pane_id: pane, terminal_id: `${pane}-terminal`, tab_id: 'codex-tab', workspace_id: 'workspace-host-0',
+    agent_session: { agent: 'codex', source: 'herdr:codex', kind: 'id', value: id } };
+}
+
+test('the list follows Herdr closures and conversation changes without waiting for daemon history refresh', async () => {
+  const { sessions, onShowChats } = setup();
+  const snapshot = sessions.presentationSessions[0].snapshot;
+  Object.assign(snapshot, { tabs: [], agents: [codexAgent('a')] });
+  const codexHosts = [{ hostId: 'host-0', sessionId: 'session-host-0', snapshot: { connected: true, requests: [], threads: [
+    { id: 'a', name: 'Thread A', cwd: '/same/project', updatedAt: 1, status: 'idle' },
+    { id: 'b', name: 'Thread B', cwd: '/same/project', updatedAt: 2, status: 'idle' },
+  ] } }];
+  const props = { hosts, sessions: sessions as unknown as SessionRuntimeController, onManageHosts: jest.fn(), onShowChats,
+    codexHosts: codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[] };
+  await act(async () => { renderer = create(<ChatsScreen {...props} />); });
+  expect(button('Open chat Thread A on First')).toBeDefined();
+  expect(button('Open chat Thread B on First')).toBeUndefined();
+  Object.assign(snapshot, { agents: [codexAgent('b')] });
+  await act(async () => { renderer.update(<ChatsScreen {...props} />); });
+  expect(button('Open chat Thread A on First')).toBeUndefined();
+  expect(button('Open chat Thread B on First')).toBeDefined();
+  Object.assign(snapshot, { agents: [] });
+  await act(async () => { renderer.update(<ChatsScreen {...props} />); });
+  expect(button('Open chat Thread B on First')).toBeUndefined();
+});
+
+test('a newly linked Herdr conversation opens its exact ID before daemon metadata arrives', async () => {
+  const { sessions, onShowChats } = setup();
+  Object.assign(sessions.presentationSessions[0].snapshot, { tabs: [], agents: [codexAgent('new-id')] });
+  const open = jest.fn();
+  await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} onOpenCodex={open} codexHosts={[]} />); });
+  act(() => { button('Open chat Codex on First').props.onPress(); });
+  expect(open).toHaveBeenCalledWith('host-0', 'new-id');
+});
+
+test.each([false, true])('new Codex chat gets a Herdr tab and preserves the created thread after launch failure (%s)', async failure => {
+  const { sessions, onShowChats } = setup();
+  const createThread = jest.fn(async () => ({ id: 'created-id', name: 'New', cwd: '/home/test/Projects/mobile', updatedAt: 1, status: 'idle' }));
+  if (failure) sessions.launchTab.mockRejectedValueOnce(new Error('Connection lost'));
+  const open = jest.fn();
+  const codexHosts = [{ hostId: 'host-0', sessionId: 'session-host-0', client: { create: createThread }, snapshot: { connected: true, threads: [], requests: [] } }];
+  await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} onOpenCodex={open} codexHosts={codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[]} />); });
+  act(() => { button('New agent').props.onPress(); });
+  act(() => { input('New project directory').props.onChangeText('/home/test/Projects/mobile'); });
+  await act(async () => { await button('Start conversation').props.onPress(); });
+  expect(sessions.createWorkspace).toHaveBeenCalledTimes(1);
+  expect(createThread).toHaveBeenCalledTimes(1);
+  expect(createThread).toHaveBeenCalledWith('/home/test/Projects/mobile', '', '', 'default');
+  expect(sessions.launchTab).toHaveBeenCalledTimes(1);
+  expect(sessions.launchTab).toHaveBeenCalledWith('session-host-0', 'new-workspace', 'Codex', {
+    type: 'agent', kind: 'codex', args: ['resume', 'created-id'], reverseControl: false,
+  }, 'background');
+  expect(open).toHaveBeenCalledWith('host-0', 'created-id');
+  expect(Alert.alert).toHaveBeenCalledTimes(failure ? 1 : 0);
+  expect(onShowChats).not.toHaveBeenCalled();
 });
