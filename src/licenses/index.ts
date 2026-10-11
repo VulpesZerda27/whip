@@ -32,15 +32,6 @@ export const OPEN_SOURCE_LICENSES: readonly OpenSourceLicenseNotice[] = [
     licenseAsset: bundledAsset(require('../../assets/licenses/subsampling-scale-image-view-Apache-2.0.txt')),
   },
   {
-    id: 'shizuku-api',
-    projectName: 'Shizuku API',
-    sourceUrl: 'https://github.com/RikkaApps/Shizuku-API',
-    attribution: 'Reins uses Shizuku API and its provider to request privileged Android access.',
-    licenseName: 'MIT License',
-    copyright: 'Copyright (c) 2021 RikkaW',
-    licenseAsset: bundledAsset(require('../../assets/licenses/shizuku-MIT.txt')),
-  },
-  {
     id: 'whip',
     projectName: 'Whip',
     sourceUrl: 'https://github.com/kosumic/whip',

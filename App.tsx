@@ -15,7 +15,6 @@ import { chatCjkFontAsset } from './src/services/chatFontAsset';
 import { terminalFontFamily } from './src/lib/terminalFonts';
 import { reportBackgroundFailure } from './src/services/backgroundOperations';
 import { useAgentNotifications } from './src/hooks/useAgentNotifications';
-import { useUsageTracking } from './src/hooks/useUsageTracking';
 import { useAppNavigation } from './src/hooks/useAppNavigation';
 import { useApplicationSecurity } from './src/hooks/useApplicationSecurity';
 import { useDevicePreferences } from './src/hooks/useDevicePreferences';
@@ -29,8 +28,6 @@ import {
 import { useStartupStorage } from './src/hooks/useStartupStorage';
 import { useTerminalHistory } from './src/hooks/useTerminalHistory';
 import { useTerminalSessions } from './src/hooks/useTerminalSessions';
-import { getBillingRolloutPolicy } from './src/billing/rollout';
-import { useWhipEntitlements } from './src/billing/useWhipEntitlements';
 
 const guiFontAssets = {
   [chatCjkFontFamily]: chatCjkFontAsset,
@@ -58,15 +55,10 @@ function App() {
 }
 
 function AppContent() {
-  useUsageTracking();
   const { t } = useTranslation();
   const startupStorage = useStartupStorage();
   const preferences = useDevicePreferences(startupStorage);
   const preferencesLoaded = preferences.hydration.status !== 'loading';
-  const { billingEnabled } = getBillingRolloutPolicy(
-    preferences.value.developerOptionsEnabled,
-  );
-  const entitlements = useWhipEntitlements(preferencesLoaded && billingEnabled);
   const terminals = useTerminalSessions();
   const telemetry = useLiveHostTelemetry();
   const notifications = useAgentNotifications();
@@ -161,7 +153,6 @@ function AppContent() {
   return (
     <AppShell
       preferences={preferences}
-      entitlements={entitlements}
       hosts={hosts}
       sessions={sessions}
       navigation={navigation}

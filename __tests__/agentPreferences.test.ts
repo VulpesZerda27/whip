@@ -35,7 +35,7 @@ beforeEach(() => {
   setItem.mockReset().mockResolvedValue(undefined);
 });
 
-test('restores the saved agent preference into a new runtime after an app restart', async () => {
+test('preserves agent identity and arguments while retiring phone-control grants', async () => {
   const value = JSON.stringify({
     agents: [
       {
@@ -55,9 +55,11 @@ test('restores the saved agent preference into a new runtime after an app restar
     storage.load('host', runtime),
   ]);
   expect(getItem).toHaveBeenCalledTimes(1);
-  expect(restore).toHaveBeenCalledWith(value);
+  const migrated = JSON.parse(value);
+  migrated.agents[0].reverseControl = false;
+  expect(restore).toHaveBeenCalledWith(JSON.stringify(migrated));
   await storage.save('host', runtime);
-  expect(setItem).not.toHaveBeenCalled();
+  expect(setItem).toHaveBeenCalledWith('whip.agent.preferences.v1.host', JSON.stringify(migrated));
 });
 
 test('serializes writes so an earlier toggle cannot overwrite a later toggle', async () => {

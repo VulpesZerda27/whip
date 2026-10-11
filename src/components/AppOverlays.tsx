@@ -11,7 +11,6 @@ import {
   reportBackgroundFailure,
 } from '../services/backgroundOperations';
 import { AppAccessLock } from './AppAccessLock';
-import { AppBackground } from './AppBackground';
 import { ConnectionScreen } from './ConnectionScreen';
 import { DeleteHostConfirmationPopup } from './DeleteHostConfirmationPopup';
 import { FullScreenOverlay } from './FullScreenOverlay';
@@ -42,7 +41,7 @@ export function AppOverlays({
   remoteFiles,
   security,
 }: AppOverlaysProps) {
-  const { appBackgroundImageUri, appBackgroundDimming, biometricForKeys } =
+  const { biometricForKeys } =
     effectivePreferences;
   const activeSession = sessions.activeSession;
   const reviewSession = sessions.presentationSessions.find(session => session.id === remoteFiles.request?.hostSessionId);
@@ -59,10 +58,6 @@ export function AppOverlays({
     <>
       {hosts.newHostOpen && (
         <View className="absolute inset-0 z-40 bg-background">
-          <AppBackground
-            uri={appBackgroundImageUri}
-            dimming={appBackgroundDimming}
-          />
           <NewHostScreen
             onCancel={hosts.closeNewHost}
             onManual={hosts.openManualHost}
@@ -74,10 +69,6 @@ export function AppOverlays({
 
       {hosts.editorProfile && (
         <View className="absolute inset-0 z-40 bg-background">
-          <AppBackground
-            uri={appBackgroundImageUri}
-            dimming={appBackgroundDimming}
-          />
           <ConnectionScreen
             key={hosts.editorProfile.id}
             initialProfile={hosts.editorProfile}
@@ -102,10 +93,6 @@ export function AppOverlays({
 
       {hosts.unlockedGlobalKeys !== null && (
         <View className="absolute inset-0 z-50 bg-background">
-          <AppBackground
-            uri={appBackgroundImageUri}
-            dimming={appBackgroundDimming}
-          />
           <GlobalKeychainScreen
             initialKeys={hosts.unlockedGlobalKeys}
             onChanged={hosts.updateGlobalKeys}
@@ -116,10 +103,6 @@ export function AppOverlays({
 
       {hosts.knownHostsOpen && (
         <FullScreenOverlay>
-          <AppBackground
-            uri={appBackgroundImageUri}
-            dimming={appBackgroundDimming}
-          />
           <KnownHostsScreen
             state={hosts.knownHostsState}
             onClose={hosts.closeKnownHosts}
@@ -131,10 +114,6 @@ export function AppOverlays({
 
       {navigation.licensesOpen && (
         <FullScreenOverlay>
-          <AppBackground
-            uri={appBackgroundImageUri}
-            dimming={appBackgroundDimming}
-          />
           <LicensesScreen onClose={navigation.closeLicenses} />
         </FullScreenOverlay>
       )}

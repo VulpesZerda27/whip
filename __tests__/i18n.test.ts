@@ -23,7 +23,8 @@ describe('localization resources', () => {
   });
 
   it('includes translated primary navigation and settings labels', () => {
-    expect(zhHant['nav.hosts']).toBe('主機');
+    expect(zhHant['nav.hosts']).toBe('伺服器');
+    expect(zhHant['nav.settings']).toBe('設定');
     expect(zhHant['nav.terminal']).toBe('終端機');
     expect(zhHant['settings.keepScreenOn']).toBe('保持螢幕開啟');
     expect(zhHant['settings.language']).toBe('語言');

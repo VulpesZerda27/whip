@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,32 +14,19 @@ import type { useApplicationSecurity } from '../hooks/useApplicationSecurity';
 import type { useLiveHostTelemetry } from '../hooks/useLiveHostTelemetry';
 import type { useTerminalHistory } from '../hooks/useTerminalHistory';
 import type { useTerminalSessions } from '../hooks/useTerminalSessions';
-import { effectiveDevicePreferences } from '../billing/effectiveSettings';
-import { simulateDeveloperMembership } from '../billing/developerMembership';
-import { getBillingRolloutPolicy } from '../billing/rollout';
-import type { WhipEntitlementsController } from '../billing/useWhipEntitlements';
-import { resolveHerdProjectionRequest, type HerdHostQueue } from '../herdQueue';
-import { aggregateAgentStatus } from '../lib/agentStatusAggregate';
-import { shouldEnableAppGlass } from '../lib/appGlass';
-import { hostDisplayName } from '../lib/hostProfiles';
 import { hostRuntimeSummary } from '../lib/hostRuntimeSummary';
 import {
   isLiveHostSshConnected,
   visibleLiveHostLatency,
 } from '../lib/liveHostLatency';
-import { dismissAgentAlertsForTab, alertAgent } from '../services/alerts';
+import { dismissAgentAlertsForTab } from '../services/alerts';
 import {
   ignoreExpectedCancellation,
   reportBackgroundFailure,
 } from '../services/backgroundOperations';
-import { startBackgroundMonitoring } from '../services/backgroundMonitoring';
 import { useTheme } from '../theme';
-import type { LiveSessionRailItem } from './LiveSessionRail';
 import { AgentStatusAnimationProvider } from './app-ui';
-import { AppBackground } from './AppBackground';
 import { AppOverlays } from './AppOverlays';
-import { BrowserSurface } from '../browser/BrowserSurface';
-import { connectedBrowserRuntimes } from '../browser/registry';
 import {
   StableStatusBar,
   TerminalKeepAwake,
@@ -58,17 +45,15 @@ import { ChatsScreen } from './ChatsScreen';
 import { useChatLibrary } from '../hooks/useChatLibrary';
 import { useChatExperience } from '../hooks/useChatExperience';
 import { GlassProvider } from './GlassSurface';
-import { HerdScreen } from './HerdScreen';
 import { HostsScreen } from './HostsScreen';
 import { LiveSessionView } from './LiveSessionView';
-import { MoreScreen } from './MoreScreen';
+import { SettingsScreen } from './SettingsScreen';
 import { ScreenUpdates } from './ScreenUpdates';
 
 const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;
 
 interface AppShellProps {
   preferences: DevicePreferencesController;
-  entitlements: WhipEntitlementsController;
   hosts: HostManagementController;
   sessions: SessionRuntimeController;
   navigation: AppNavigationController;
@@ -83,7 +68,6 @@ interface AppShellProps {
 /** Main application presentation. State and lifecycle stay in domain controllers. */
 export function AppShell({
   preferences,
-  entitlements,
   hosts,
   sessions,
   navigation,
@@ -98,45 +82,20 @@ export function AppShell({
   const { colors: theme, isDark } = useTheme();
   const navigationBlurTargetRef = useRef<View | null>(null);
   const storedPreferences = preferences.value;
-  const billingPolicy = getBillingRolloutPolicy(storedPreferences.developerOptionsEnabled);
-  const developerMembershipState = billingPolicy.developerOptionsEnabled
-    ? storedPreferences.developerMembershipState
-    : null;
-  const displayedEntitlements = useMemo(
-    () => developerMembershipState
-      ? simulateDeveloperMembership(entitlements, developerMembershipState)
-      : entitlements,
-    [developerMembershipState, entitlements],
-  );
-  const accessTier = billingPolicy.billingEnabled ? displayedEntitlements.tier : 'rancher';
-  const effectivePreferences = useMemo(
-    () => effectiveDevicePreferences(storedPreferences, accessTier),
-    [accessTier, storedPreferences],
-  );
+  const effectivePreferences = storedPreferences;
   const {
     alertsEnabled,
     agentAlertLevel,
     persistentAlertDurationSeconds,
     ttsEnabled,
-    biometricForKeys,
-    biometricOnResume,
-    appearance,
-    fullscreenApp,
-    appBackgroundImageUri,
-    appBackgroundDimming,
-    appGlassEnabled,
-    developerOptionsEnabled,
-    language,
     keepScreenOn,
-    reopenTerminalOnLaunch,
-    agentCommand,
     terminal: terminalPreferences,
     terminalControlUsage,
   } = effectivePreferences;
   const codexHosts = useCodexHosts(sessions, !security.locked && !hosts.editorProfile, {alertsEnabled, agentAlertLevel, persistentAlertDurationSeconds, ttsEnabled});
   const [codexSelection, setCodexSelection] = useState<{hostId:string;threadId:string} | null>(null);
   const codexHost = codexHosts.find(h=>h.hostId===codexSelection?.hostId);
-  const codexVisible = Boolean(codexSelection && navigation.state.tab === 'terminal' && navigation.state.lastNonTerminalTab === 'chats');
+  const codexVisible = Boolean(codexSelection && navigation.state.tab === 'chat');
   const openCodex = (hostId:string,threadId:string) => {
     setCodexSelection({hostId,threadId});
     const host = codexHosts.find(h=>h.hostId===hostId);
@@ -151,10 +110,10 @@ export function AppShell({
     ? telemetry.get(activeSession.id)
     : null;
   const terminalVisible =
-    navigation.state.tab === 'terminal' && !hosts.editorProfile;
+    (navigation.state.tab === 'terminal' || navigation.state.tab === 'chat') && !hosts.editorProfile;
   const immersiveTerminal = terminalVisible && (Boolean(activeSession) || codexVisible);
   const activeTerminalVisible = Boolean(
-    immersiveTerminal &&
+    navigation.state.tab === 'terminal' && immersiveTerminal &&
       activeSession &&
       terminals.get(activeSession.id, sessions.state).activeTerminalId,
   );
@@ -176,124 +135,10 @@ export function AppShell({
     codexVisible ? undefined : activeChatPaneId, !security.locked && !hosts.editorProfile);
   // Chat keeps the system indicators beside the camera cutout and its title
   // below the top safe area, even when terminals normally use fullscreen.
-  const chatSessionVisible = terminalVisible && navigation.state.lastNonTerminalTab === 'chats';
+  const chatSessionVisible = navigation.state.tab === 'chat';
   const fullscreenVisible = !chatSessionVisible && (immersiveTerminal
     ? activeTerminalVisible && terminalPreferences.fullscreen
-    : fullscreenApp);
-
-  const openAgentFiles = (sessionId: string, paneId: string) => {
-    const pane = sessions.presentationSessions
-      .find(session => session.id === sessionId)
-      ?.snapshot.panes.find(item => item.pane_id === paneId);
-    if (pane) remoteFiles.open(sessionId, pane.terminal_id);
-  };
-
-  const renderHerd = () => {
-    const herdProjectionRequest = resolveHerdProjectionRequest(
-      sessions.presentationSessions.map(session => session.id),
-      navigation.herdHostFilterId,
-      navigation.herdWorkspaceFilterIds,
-    );
-    const scopedSession = sessions.presentationSessions.find(
-      session => session.id === herdProjectionRequest.hostId,
-    );
-    const offline = Boolean(scopedSession && scopedSession.connectionStatus !== 'ready');
-    const herdProjection = sessions.herdView(
-      sessions.presentationSessions.map(session => ({
-        sessionId: session.id,
-        hostLabel: hostDisplayName(session.host),
-        address: session.host.host,
-      })),
-      herdProjectionRequest.hostId ?? undefined,
-      herdProjectionRequest.workspaceId ?? undefined,
-    );
-    const herdHostsById = new Map(herdProjection.hosts.map(host => [host.id, host]));
-    const railSessions: LiveSessionRailItem[] = sessions.presentationSessions.map(session => {
-      const herdHost = herdHostsById.get(session.id);
-      return {
-        hostId: session.id,
-        label: hostDisplayName(session.host),
-        status: session.connectionStatus,
-        // Herd defaults to idle without agents; the rail still summarizes
-        // workspaces in that case and defaults to unknown without workspaces.
-        agentStatus: herdHost && herdHost.agents.length > 0
-          ? herdHost.agentStatus
-          : aggregateAgentStatus(
-            session.snapshot.workspaces.map(workspace => workspace.agent_status),
-            'unknown',
-          ),
-        terminalCount: terminals.get(session.id, sessions.state).sessions.length,
-      };
-    });
-    const herdQueues: HerdHostQueue[] = herdProjection.hosts;
-
-    return sessions.presentationSessions.length > 0 ? (
-      <HerdScreen
-        queues={herdQueues}
-        agents={herdProjection.agents}
-        sessions={railSessions}
-        selectedHostId={herdProjection.selectedHostId ?? null}
-        workspaceFilterId={herdProjection.selectedWorkspaceId ?? null}
-        offline={offline}
-        agentCommand={agentCommand}
-        commandHistory={history.entries}
-        onSelectHost={sessionId => {
-          navigation.selectHerdHost(sessionId);
-          if (!sessionId) return;
-          const selected = sessions.presentationSessions.find(session => session.id === sessionId);
-          if (selected && selected.connectionStatus !== 'ready' && !sessions.getClient(sessionId)) {
-            reportBackgroundFailure(
-              sessions.connectSavedHost(selected.host),
-              'herd-host-connect',
-            );
-          } else {
-            sessions.select(sessionId, 'herd');
-          }
-        }}
-        onWorkspaceFilterChange={navigation.setHerdWorkspaceFilter}
-        onCloseHost={sessions.close}
-        onNewHost={() => navigation.selectTab('hosts')}
-        onSelectWorkspace={sessions.selectWorkspace}
-        onFocusWorkspace={sessions.focusWorkspace}
-        onCreateWorkspace={sessions.createWorkspace}
-        onRenameWorkspace={sessions.renameWorkspace}
-        onCloseWorkspace={sessions.closeWorkspace}
-        onCloseTab={sessions.closeTab}
-        onSetAgentReverseControl={sessions.setAgentReverseControl}
-        onRestartAgent={sessions.restartAgent}
-        onCopyAgent={sessions.copyAgent}
-        onRefresh={async () => {
-          if (offline && scopedSession) {
-            await sessions.connectSavedHost(scopedSession.host);
-            return;
-          }
-          const ids = herdProjectionRequest.hostId
-            ? [herdProjectionRequest.hostId]
-            : sessions.presentationSessions.map(session => session.id);
-          await Promise.all(ids.map(sessions.refresh));
-        }}
-        onOpenTerminal={sessions.openAgentTerminal}
-        onOpenFiles={(sessionId, agent) =>
-          openAgentFiles(sessionId, agent.pane_id)
-        }
-        onLaunchTab={async (...args) => {
-          await sessions.launchTab(...args);
-          const launch = args[3];
-          if (launch.type === 'command') {
-            history.record(launch.command);
-          }
-        }}
-        onOpenSpace={sessions.openWorkspace}
-        onStartServer={sessions.startServer}
-        onOpenSshShell={sessions.openSshShell}
-      />
-    ) : (
-      <ConnectRequiredScreen
-        destination={t('nav.herd')}
-        onPickHost={() => navigation.selectTab('hosts')}
-      />
-    );
-  };
+    : false);
 
   const overlaysVisible =
     hosts.editorProfile !== null ||
@@ -321,7 +166,7 @@ export function AppShell({
         {keepScreenOn && activeTerminalVisible ? <TerminalKeepAwake /> : null}
         <GlassProvider
           blurTarget={navigationBlurTargetRef}
-          enabled={shouldEnableAppGlass(appGlassEnabled, appBackgroundImageUri)}
+          enabled={false}
         >
           <View className="flex-1 bg-background">
             <NavigationBlurTarget
@@ -340,11 +185,6 @@ export function AppShell({
                     : styles.navigationForeground
                 }
               >
-                <AppBackground
-                  uri={appBackgroundImageUri}
-                  dimming={appBackgroundDimming}
-                />
-
                 {navigation.mountedTabs.has('chats') ? (
                   <View
                     importantForAccessibility={navigation.state.tab === 'chats' ? 'auto' : 'no-hide-descendants'}
@@ -428,6 +268,13 @@ export function AppShell({
                                 .connectSavedHost(host)
                                 .catch(error => hosts.setError(String(error)));
                             }}
+                            onOpenTerminal={host => {
+                              setCodexSelection(null);
+                              reportBackgroundFailure((async () => {
+                                await sessions.connectSavedHost(host, { navigate: false });
+                                if (sessions.getClient(host.id)) sessions.openSshShell(host.id);
+                              })(), 'server-terminal-open');
+                            }}
                             onDelete={hosts.confirmDelete}
                             onDisconnect={host =>
                               sessions.closeHostById(host.id)
@@ -436,32 +283,6 @@ export function AppShell({
                             onUnlockCredentials={hosts.unlockCredentialRecovery}
                           />
                         )}
-                      </ScreenUpdates>
-                    </AgentStatusAnimationProvider>
-                  </View>
-                ) : null}
-
-                {navigation.mountedTabs.has('herd') ? (
-                  <View
-                    importantForAccessibility={
-                      navigation.state.tab === 'herd'
-                        ? 'auto'
-                        : 'no-hide-descendants'
-                    }
-                    pointerEvents={
-                      navigation.state.tab === 'herd' ? 'auto' : 'none'
-                    }
-                    style={
-                      navigation.state.tab === 'herd'
-                        ? styles.tabScreen
-                        : styles.hiddenTab
-                    }
-                  >
-                    <AgentStatusAnimationProvider
-                      enabled={navigation.state.tab === 'herd'}
-                    >
-                      <ScreenUpdates active={navigation.state.tab === 'herd'}>
-                        {renderHerd}
                       </ScreenUpdates>
                     </AgentStatusAnimationProvider>
                   </View>
@@ -494,178 +315,15 @@ export function AppShell({
                   >
                     <ScreenUpdates active={navigation.state.tab === 'more'}>
                       {() => (
-                        <MoreScreen
-                          alertsEnabled={alertsEnabled}
-                          agentAlertLevel={agentAlertLevel}
-                          backgroundMonitoringAvailable={
-                            alertsEnabled && sessions.presentationSessions.length > 0
-                          }
-                          persistentAlertDurationSeconds={
-                            persistentAlertDurationSeconds
-                          }
-                          ttsEnabled={ttsEnabled}
-                          biometricForKeys={biometricForKeys}
-                          biometricOnResume={biometricOnResume}
+                        <SettingsScreen
+                          preferences={preferences}
                           globalKeyCount={hosts.globalSshKeys.length}
-                          knownHostCount={
-                            hosts.knownHostsState.status === 'loaded'
-                              ? hosts.knownHosts.length
-                              : null
-                          }
-                          appearance={appearance}
-                          fullscreenApp={fullscreenApp}
-                          smoothSpinners={storedPreferences.smoothSpinners}
-                          appBackgroundImageUri={
-                            storedPreferences.appBackgroundImageUri
-                          }
-                          appBackgroundDimming={
-                            storedPreferences.appBackgroundDimming
-                          }
-                          appGlassEnabled={storedPreferences.appGlassEnabled}
-                          accessTier={accessTier}
-                          entitlements={displayedEntitlements}
-                          developerOptionsEnabled={developerOptionsEnabled}
-                          developerMembershipState={
-                            storedPreferences.developerMembershipState
-                          }
-                          membershipEnabled={billingPolicy.billingEnabled}
-                          language={language}
-                          keepScreenOn={keepScreenOn}
-                          reopenTerminalOnLaunch={reopenTerminalOnLaunch}
-                          agentCommand={agentCommand}
-                          terminalHistory={history.entries}
-                          terminalPreferences={storedPreferences.terminal}
-                          onAlertsChange={value =>
-                            preferences.setPreference('alertsEnabled', value)
-                          }
-                          onAgentAlertLevelChange={value =>
-                            preferences.setPreference('agentAlertLevel', value)
-                          }
-                          onStartBackgroundMonitoring={async () => {
-                            try {
-                              await startBackgroundMonitoring(
-                                sessions.presentationSessions.length,
-                              );
-                            } catch (error) {
-                              hosts.setError(
-                                t('app.backgroundUnavailable', {
-                                  error: String(error),
-                                }),
-                              );
-                            }
-                          }}
-                          onPersistentAlertDurationChange={value =>
-                            preferences.setPreference(
-                              'persistentAlertDurationSeconds',
-                              value,
-                            )
-                          }
-                          onTestAgentNotification={() => {
-                            alertAgent(
-                              {
-                                terminal_id: 'whip-alert-test',
-                                agent: 'Reins',
-                                agent_status: 'done',
-                                workspace_id: 'whip-alert-test',
-                                tab_id: 'whip-alert-test',
-                                pane_id: 'whip-alert-test',
-                                focused: false,
-                                revision: 0,
-                              },
-                              false,
-                              {
-                                hostId: 'whip-alert-test',
-                                paneId: 'whip-alert-test',
-                              },
-                              t('settings.testAgentNotificationTab'),
-                              Platform.OS === 'android'
-                                ? agentAlertLevel
-                                : 'persistent',
-                              persistentAlertDurationSeconds * 1_000,
-                            ).catch(error => hosts.setError(String(error)));
-                          }}
-                          onTtsChange={value =>
-                            preferences.setPreference('ttsEnabled', value)
-                          }
-                          onBiometricForKeysChange={value => {
-                            ignoreExpectedCancellation(
-                              security.updateBiometricForKeys(value),
-                            );
-                          }}
-                          onBiometricOnResumeChange={value => {
-                            ignoreExpectedCancellation(
-                              security.updateBiometricOnResume(value),
-                            );
-                          }}
-                          onManageGlobalKeychain={() => {
-                            ignoreExpectedCancellation(
-                              hosts.openGlobalKeychain(),
-                            );
-                          }}
+                          knownHostCount={hosts.knownHostsState.status === 'loaded' ? hosts.knownHosts.length : null}
+                          onManageGlobalKeychain={() => ignoreExpectedCancellation(hosts.openGlobalKeychain())}
                           onManageKnownHosts={hosts.openKnownHosts}
+                          onBiometricForKeysChange={value => ignoreExpectedCancellation(security.updateBiometricForKeys(value))}
+                          onBiometricOnResumeChange={value => ignoreExpectedCancellation(security.updateBiometricOnResume(value))}
                           onOpenLicenses={navigation.openLicenses}
-                          onAppearanceChange={value =>
-                            preferences.setPreference('appearance', value)
-                          }
-                          onFullscreenAppChange={value =>
-                            preferences.setPreference('fullscreenApp', value)
-                          }
-                          onSmoothSpinnersChange={value =>
-                            preferences.setPreference('smoothSpinners', value)
-                          }
-                          onAppBackgroundImageChange={value =>
-                            preferences.setPreference(
-                              'appBackgroundImageUri',
-                              value,
-                            )
-                          }
-                          onAppBackgroundDimmingChange={value =>
-                            preferences.setPreference(
-                              'appBackgroundDimming',
-                              value,
-                            )
-                          }
-                          onAppGlassEnabledChange={value =>
-                            preferences.setPreference('appGlassEnabled', value)
-                          }
-                          onDeveloperOptionsEnabledChange={value => {
-                            preferences.setPreference(
-                              'developerOptionsEnabled',
-                              value,
-                            );
-                            if (!value) {
-                              preferences.setTerminalPreferences(current =>
-                                current.visualHints
-                                  ? { ...current, visualHints: false }
-                                  : current,
-                              );
-                            }
-                          }}
-                          onDeveloperMembershipStateChange={value =>
-                            preferences.setPreference(
-                              'developerMembershipState',
-                              value,
-                            )
-                          }
-                          onLanguageChange={value =>
-                            preferences.setPreference('language', value)
-                          }
-                          onKeepScreenOnChange={value =>
-                            preferences.setPreference('keepScreenOn', value)
-                          }
-                          onReopenTerminalOnLaunchChange={value =>
-                            preferences.setPreference(
-                              'reopenTerminalOnLaunch',
-                              value,
-                            )
-                          }
-                          onAgentCommandChange={value =>
-                            preferences.setPreference('agentCommand', value)
-                          }
-                          onDeleteTerminalHistory={history.remove}
-                          onTerminalPreferencesChange={
-                            preferences.setTerminalPreferences
-                          }
                         />
                       )}
                     </ScreenUpdates>
@@ -688,13 +346,13 @@ export function AppShell({
                 }}
               /> : null}
               {codexVisible && !codexHost ? <ConnectRequiredScreen destination="Codex chat" onPickHost={() => navigation.selectTab('hosts')} /> : null}
-              {navigation.mountedTabs.has('terminal') &&
+              {(navigation.mountedTabs.has('terminal') || navigation.mountedTabs.has('chat')) &&
                 !codexVisible && activeSession && (
                   <AgentStatusAnimationProvider enabled={terminalVisible}>
                     <LiveSessionView
                       draftSaveError={terminals.draftError}
                       onToggleReadAloud={() => preferences.setPreference('ttsEnabled', !ttsEnabled)}
-                      preferChat={navigation.state.lastNonTerminalTab === 'chats'}
+                      preferChat={navigation.state.tab === 'chat'}
                       session={activeSession}
                       client={liveClient}
                       visible={terminalVisible}
@@ -709,8 +367,8 @@ export function AppShell({
                       }
                       terminalState={terminals.get(activeSession.id, sessions.state)}
                       terminalTargets={sessions.terminalTargets}
-                      appBackgroundImageUri={appBackgroundImageUri}
-                      appBackgroundDimming={appBackgroundDimming}
+                      appBackgroundImageUri={null}
+                      appBackgroundDimming={60}
                       terminalPreferences={terminalPreferences}
                       terminalControlUsage={terminalControlUsage}
                       terminalHistory={history.entries}
@@ -732,8 +390,7 @@ export function AppShell({
                         );
                       }}
                       onExit={() => {
-                        if (navigation.state.lastNonTerminalTab === 'chats') navigation.selectTab('chats');
-                        else sessions.exitTerminalToHerd(activeSession.id);
+                        navigation.selectTab(navigation.state.tab === 'chat' ? 'chats' : navigation.state.lastNonTerminalTab);
                       }}
                       onRefresh={async sessionId => {
                         if (activeSession.connectionStatus === 'ready') await sessions.refresh(sessionId);
@@ -758,15 +415,10 @@ export function AppShell({
             {!immersiveTerminal && !overlaysVisible && (
               <BottomNavigation
                 activeTab={navigation.state.tab}
-                blurTarget={navigationBlurTargetRef}
                 onSelect={navigation.selectTab}
               />
             )}
 
-            <BrowserSurface runtimes={connectedBrowserRuntimes(
-              sessions.presentationSessions,
-              id => sessions.getClient(id)?.native,
-            )} />
             <AppOverlays
               effectivePreferences={effectivePreferences}
               hosts={hosts}

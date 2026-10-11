@@ -1,4 +1,4 @@
-import { AlertCircle, Bot, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, Trash2 } from 'lucide-react-native';
+import { AlertCircle, Bot, Ellipsis, LockKeyhole, LogIn, LogOut, Network, Plus, Server, ServerOff, SquareTerminal, Trash2 } from 'lucide-react-native';
 import { useEffect, useRef, useState } from 'react';
 import { PanResponder, Platform, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -38,13 +38,14 @@ interface Props {
   credentialRecoveryBusy: boolean;
   onAdd: () => void;
   onConnect: (host: HostProfile) => void;
+  onOpenTerminal: (host: HostProfile) => void;
   onDelete: (host: HostProfile) => void;
   onDisconnect: (host: HostProfile) => void;
   onEdit: (host: HostProfile) => void;
   onUnlockCredentials: () => Promise<boolean>;
 }
 
-export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
+export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId, connectedHostIds = [], latencyMsByHostId = {}, runtimeByHostId = {}, credentialRecovery, credentialRecoveryBusy, onAdd, onConnect, onOpenTerminal, onDelete, onDisconnect, onEdit, onUnlockCredentials }: Props) {
   const { t } = useTranslation();
   const { colors } = useTheme();
   const { bottom } = useSafeAreaInsets();
@@ -59,7 +60,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
   return (
     <View className="flex-1">
       <ScreenHeader
-        title="Reins"
+        title={t('nav.hosts')}
         subtitle={t('hosts.subtitle')}
         left={<ReinsMark size={40} />}
         right={<IconButton icon={Plus} accessibilityLabel={t('hosts.add')} onPress={onAdd} />}
@@ -205,6 +206,7 @@ export function HostsScreen({ hosts, connectingHostIds = [], error, activeHostId
                               ) : null}
                             </View>
                           </Button>
+                          <IconButton icon={SquareTerminal} disabled={connecting} accessibilityLabel={t('hosts.openTerminal', {host: displayName})} onPress={() => onOpenTerminal(host)} />
                           <IconButton icon={Ellipsis} accessibilityLabel={t('hosts.edit', { host: displayName })} onPress={() => {
                             if (actionsOpen) closeActions();
                             else onEdit(host);

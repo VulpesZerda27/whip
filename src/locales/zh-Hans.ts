@@ -12,6 +12,7 @@ export const zhHans = {
   'usage.duration': '{{hours}}小时 {{minutes}}分钟',
   'usage.calendarCopy': '本地时间 · 每周从周一开始。从此次更新起在此设备上记录。Reins 被挂起或智能体状态不可用时暂停计时。',
 
+  'common.back': '返回',
   'common.cancel': '取消',
   'common.close': '关闭',
   'common.connect': '连接',
@@ -44,7 +45,9 @@ export const zhHans = {
   'markdown.a11y.links': '链接',
   'markdown.a11y.images': '图片',
   'nav.chats': '聊天',
-  'nav.hosts': '主机',
+  'nav.hosts': '服务器',
+  'nav.settings': '设置',
+  'hosts.openTerminal': '在 {{host}} 上打开终端',
   'nav.herd': 'Herd',
   'nav.terminal': '终端',
   'nav.more': '更多',

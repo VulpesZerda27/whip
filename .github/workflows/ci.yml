@@ -108,9 +108,6 @@ jobs:
       - name: Check types
         run: npx tsc --noEmit
 
-      - name: Check feedback Worker
-        run: npm run worker:check
-
       - name: Lint
         run: npm run lint
 

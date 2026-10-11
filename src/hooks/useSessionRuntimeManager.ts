@@ -83,7 +83,7 @@ export interface SessionRuntimeController {
   ) => HerdProjection;
   getState: () => AppCoreProjection;
   getClient: (sessionId: string) => HerdrClient | undefined;
-  select: (sessionId: string, tab?: 'herd' | 'terminal') => void;
+  select: (sessionId: string, tab?: 'chats' | 'terminal') => void;
   connect: (
     profile: ConnectionProfile,
     options?: ConnectOptions,
@@ -93,7 +93,6 @@ export interface SessionRuntimeController {
   closeHostById: (hostId: string, recordDisconnect?: boolean) => Promise<void>;
   refresh: (sessionId: string) => Promise<void>;
   refreshSnapshot: (sessionId: string) => Promise<HerdrSnapshot | null>;
-  exitTerminalToHerd: (sessionId: string) => void;
   activatePaneTerminal: (sessionId: string, pane: PaneInfo) => void;
   openPaneTerminal: (
     sessionId: string,
@@ -118,17 +117,6 @@ export interface SessionRuntimeController {
   ) => Promise<void>;
   closeWorkspace: (sessionId: string, workspaceId: string) => Promise<void>;
   closeTab: (sessionId: string, tabId: string) => Promise<void>;
-  setAgentReverseControl: (
-    sessionId: string,
-    terminalId: string,
-    enabled: boolean,
-  ) => Promise<void>;
-  restartAgent: (sessionId: string, terminalId: string) => Promise<void>;
-  copyAgent: (
-    sessionId: string,
-    terminalId: string,
-    label?: string,
-  ) => Promise<void>;
   launchTab: (
     sessionId: string,
     workspaceId: string,
@@ -297,7 +285,6 @@ export function useSessionRuntimeManager({
       closeHostById: connection.closeHostById,
       refresh: connection.refresh,
       refreshSnapshot: connection.refreshSnapshot,
-      exitTerminalToHerd: terminal.exitTerminalToHerd,
       activatePaneTerminal: terminal.activatePaneTerminal,
       openPaneTerminal: terminal.openPaneTerminal,
       openAgentTerminal: terminal.openAgentTerminal,
@@ -310,9 +297,6 @@ export function useSessionRuntimeManager({
       renameWorkspace: terminal.renameWorkspace,
       closeWorkspace: terminal.closeWorkspace,
       closeTab: terminal.closeTab,
-      setAgentReverseControl: terminal.setAgentReverseControl,
-      restartAgent: terminal.restartAgent,
-      copyAgent: terminal.copyAgent,
       launchTab: terminal.launchTab,
       startServer: terminal.startServer,
     }),

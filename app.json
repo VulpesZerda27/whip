@@ -11,7 +11,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Reins to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
+          "cameraPermission": "Allow Reins to scan server pairing codes and attach photos to chats.",
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
         }
@@ -19,8 +19,8 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "Allow Reins to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.",
-          "photosPermission": "Allow Reins to attach selected photos to the remote terminal."
+          "cameraPermission": "Allow Reins to scan server pairing codes and attach photos to chats.",
+          "photosPermission": "Allow Reins to attach selected photos to chats."
         }
       ],
       [
@@ -40,13 +40,7 @@
         }
       ],
       "expo-video",
-      "expo-web-browser",
-      [
-        "expo-sensors",
-        {
-          "motionPermission": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Reins is open."
-        }
-      ]
+      "expo-web-browser"
     ],
     "ios": {
       "bundleIdentifier": "io.github.kaminarios.whip",
@@ -63,15 +57,12 @@
         ],
         "NSFaceIDUsageDescription": "Allow Reins to use Face ID to protect SSH keys and app access.",
         "NSLocalNetworkUsageDescription": "Reins connects to SSH servers on your local network.",
-        "NSLocationWhenInUseUsageDescription": "Allow an agent launched with Reverse Control to request your current location while Reins is open.",
-        "NSMotionUsageDescription": "Allow an agent launched with Reverse Control to request a single motion or pressure sensor reading while Reins is open.",
-        "NSPhotoLibraryUsageDescription": "Allow Reins to select terminal and app background images."
+        "NSPhotoLibraryUsageDescription": "Allow Reins to attach selected photos to chats.",
+        "NSMotionUsageDescription": "Allow Reins to silence persistent agent alerts when you shake your phone."
       }
     },
     "android": {
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
         "ACCESS_NETWORK_STATE"
       ],
       "allowBackup": true,

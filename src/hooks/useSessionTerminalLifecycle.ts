@@ -1,8 +1,5 @@
-import { bestEffortCleanup } from '../services/backgroundOperations';
-import { browserRegistry } from '../browser/registry';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
-  subscribeReverseControlEvents,
   type HostRuntimeConnection,
 } from 'react-native-whip-ssh';
 import type { TFunction } from 'i18next';
@@ -38,7 +35,7 @@ export function useSessionTerminalLifecycle({
 }: SessionRuntimeStore & {
   terminals: ReturnType<typeof useTerminalSessions>;
   navigation: AppNavigationController;
-  select: (sessionId: string, tab?: 'herd' | 'terminal') => void;
+  select: (sessionId: string, tab?: 'chats' | 'terminal') => void;
   scheduleReconnect: (sessionId: string, cause: unknown) => void;
   t: TFunction;
 }) {
@@ -47,17 +44,6 @@ export function useSessionTerminalLifecycle({
   const publishControls = useCallback(() => {
     commitAppCore(appCore.view());
   }, [appCore, commitAppCore]);
-
-  useEffect(
-    () =>
-      subscribeReverseControlEvents((event, runtime) => {
-        if (!['opened', 'closed', 'state-changed'].includes(event.kind)) return;
-        const live = runtimesRef.current.get(event.session.runtimeId)?.client
-          .activeNative;
-        if (live === runtime) publishControls();
-      }),
-    [publishControls, runtimesRef],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -105,66 +91,6 @@ export function useSessionTerminalLifecycle({
       return { runtime: runtime.client.native, hostId: session.hostId };
     },
     [requireRuntime, getState, t],
-  );
-
-  const setAgentReverseControl = useCallback(
-    async (sessionId: string, terminalId: string, enabled: boolean) => {
-      const { runtime, hostId } = await prepareAgentPreferences(sessionId);
-      await runtime.setAgentReverseControl(terminalId, enabled);
-      publishControls();
-      await preferencesStorage.current.save(hostId, runtime);
-    },
-    [prepareAgentPreferences, publishControls],
-  );
-
-  const restartAgent = useCallback(
-    async (sessionId: string, terminalId: string) => {
-      const { runtime, hostId } = await prepareAgentPreferences(sessionId);
-      await runtime.restartAgent(terminalId);
-      publishControls();
-      await preferencesStorage.current.save(hostId, runtime);
-    },
-    [prepareAgentPreferences, publishControls],
-  );
-
-  const copyAgent = useCallback(
-    async (sessionId: string, terminalId: string, label?: string) => {
-      const { runtime, hostId } = await prepareAgentPreferences(sessionId);
-      let created: TabCreationResult;
-      try {
-        created = await runtime.copyAgent(terminalId, label);
-      } catch (error) {
-        const partial = error as { created?: TabCreationResult };
-        if (partial.created) {
-          terminals.openPane(sessionId, partial.created.root_pane);
-          select(sessionId, 'terminal');
-        }
-        throw error;
-      }
-      navigation.selectPane(null);
-      terminals.openPane(sessionId, created.root_pane);
-      select(sessionId, 'terminal');
-      publishControls();
-      await preferencesStorage.current.save(hostId, runtime);
-    },
-    [navigation, prepareAgentPreferences, publishControls, select, terminals],
-  );
-
-  const exitTerminalToHerd = useCallback(
-    (sessionId: string) => {
-      const session = findLiveHostSession(getState(), sessionId);
-      const activeTerminalId = terminals.get(sessionId).activeTerminalId;
-      const pane =
-        session &&
-        sessionSnapshot(session).panes.find(
-          item => item.terminal_id === activeTerminalId,
-        );
-      navigation.showHerd(
-        sessionId,
-        pane?.workspace_id || session?.selection.workspaceId,
-      );
-    },
-    [navigation, getState, terminals],
   );
 
   const activatePaneTerminal = useCallback(
@@ -221,19 +147,6 @@ export function useSessionTerminalLifecycle({
   const closeTerminal = useCallback(
     (sessionId: string, terminalId: string) => {
       const client = runtimesRef.current.get(sessionId)?.client;
-      for (const entry of browserRegistry.entries.values()) {
-        if (
-          entry.identity.runtimeId === sessionId &&
-          entry.identity.terminalId === terminalId &&
-          entry.reverseControl
-        ) {
-          client?.native.closeReverseControlSession(entry.identity.sessionId);
-        }
-      }
-      bestEffortCleanup(
-        browserRegistry.closeTerminal(sessionId, terminalId),
-        'browser-terminal-close',
-      );
       client?.terminal.closeTerminalBridge(terminalId);
       terminals.close(sessionId, terminalId);
     },
@@ -376,7 +289,6 @@ export function useSessionTerminalLifecycle({
   return useMemo(
     () => ({
       terminalTargets,
-      exitTerminalToHerd,
       activatePaneTerminal,
       openPaneTerminal,
       openAgentTerminal,
@@ -390,9 +302,6 @@ export function useSessionTerminalLifecycle({
       closeWorkspace,
       closeTab,
       launchTab,
-      setAgentReverseControl,
-      restartAgent,
-      copyAgent,
       startServer,
     }),
     [
@@ -401,12 +310,8 @@ export function useSessionTerminalLifecycle({
       closeTerminal,
       closeWorkspace,
       createWorkspace,
-      exitTerminalToHerd,
       focusWorkspace,
       launchTab,
-      setAgentReverseControl,
-      restartAgent,
-      copyAgent,
       openAgentTerminal,
       openPaneTerminal,
       openSshShell,

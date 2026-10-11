@@ -36,7 +36,7 @@ export function HostSessionRecoveryScreen({ busy, error, host, onBack, onReconne
       ) : null}
       <View className="mt-6 flex-row gap-3">
         <Button className="rounded-full px-5" variant="secondary" onPress={hapticPress(onBack)}>
-          <Text>{t('session.backToHerd')}</Text>
+          <Text>{t('common.back')}</Text>
         </Button>
         <Button
           className="rounded-full px-5"

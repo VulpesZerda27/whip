@@ -69,7 +69,7 @@ describe('HostSessionRecoveryScreen', () => {
         'session.runtimeUnavailableTitle:localhost',
         'session.runtimeUnavailableCopy',
         'connection refused',
-        'session.backToHerd',
+        'common.back',
         'session.reconnect',
       ]),
     );

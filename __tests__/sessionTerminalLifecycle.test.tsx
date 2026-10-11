@@ -4,7 +4,6 @@ import {
   createHostRuntime,
   HerdrAgentKind,
   ReverseControlState,
-  subscribeReverseControlEvents,
   type AgentControlView,
   type AppCoreProjection,
   type AppTerminalEntryProjection,
@@ -28,7 +27,6 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
   default: { getItem: jest.fn(), setItem: jest.fn() },
 }));
-jest.mock('../src/browser/registry', () => ({ browserRegistry: {} }));
 jest.mock('../src/services/NativeTranscriptService', () => ({
   agentTranscriptService: {},
 }));
@@ -96,6 +94,7 @@ function setup(
     terminals: {
       get: () => ({ sessions: terminals, activeTerminalId: null }),
       openPane,
+      openSshShell: jest.fn(),
     },
     navigation: { selectPane: jest.fn() },
     select: jest.fn(),
@@ -239,67 +238,11 @@ test('detaching during preference restoration does not publish or save a stale r
   expect(recordOperationalDiagnostic).not.toHaveBeenCalled();
 });
 
-test('Copy forwards the optional name to the native runtime and opens the created pane', async () => {
-  const client = new HerdrClient();
-  const runtime = nativeRuntime();
-  const copyAgent = jest.fn().mockResolvedValue({
-    tab: { tab_id: 'copy-tab' },
-    root_pane: { pane_id: 'copy-pane', terminal_id: 'copy-terminal' },
-  });
-  Object.assign(runtime, { copyAgent });
-  await client.connect(profile);
-  const openPane = jest.fn();
-  setup(client, openPane);
-  await act(async () => {
-    await lifecycle.copyAgent(profile.id, 'terminal', 'My copy');
-  });
-  expect(copyAgent).toHaveBeenCalledWith('terminal', 'My copy');
-  expect(openPane).toHaveBeenCalledWith(profile.id, {
-    pane_id: 'copy-pane',
-    terminal_id: 'copy-terminal',
-  });
-  expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-    'whip.agent.preferences.v1.host',
-    '{"agents":[]}',
-  );
-});
 
-test('reverse-control lifecycle events refresh the AppCore projection only for the attached runtime', async () => {
+test('explicit SSH terminal access works without a running Herdr workspace', () => {
   const client = new HerdrClient();
-  const runtime = nativeRuntime();
-  await client.connect(profile);
-  const update = setup(client);
-  await update();
-  jest.mocked(update.options.commitAppCore).mockClear();
-  const listener = jest
-    .mocked(subscribeReverseControlEvents)
-    .mock.calls.at(-1)![0];
-  const session = {
-    runtimeId: profile.id,
-    sessionId: 'mcp',
-    paneId: 'pane',
-    terminalId: 'terminal',
-  };
-  const event = {
-    session,
-    kind: 'state-changed',
-    requestId: '',
-    action: '',
-    argumentsJson: 'null',
-  };
-  act(() => listener(event, runtime as unknown as HostRuntimeConnection));
-  expect(update.options.commitAppCore).toHaveBeenCalledWith(
-    update.options.state,
-  );
-  jest.mocked(update.options.commitAppCore).mockClear();
-  act(() =>
-    listener(
-      { ...event, kind: 'action' },
-      runtime as unknown as HostRuntimeConnection,
-    ),
-  );
-  expect(update.options.commitAppCore).not.toHaveBeenCalled();
-  client.detach();
-  act(() => listener(event, runtime as unknown as HostRuntimeConnection));
-  expect(update.options.commitAppCore).not.toHaveBeenCalled();
+  const { options } = setup(client);
+  act(() => lifecycle.openSshShell(profile.id));
+  expect(options.terminals.openSshShell).toHaveBeenCalledWith(profile.id, 'terminal.sshShell');
+  expect(options.select).toHaveBeenCalledWith(profile.id, 'terminal');
 });

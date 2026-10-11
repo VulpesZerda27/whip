@@ -171,7 +171,7 @@ test('a slow reconnect cannot hijack navigation or open a second chat', async ()
 test('responses arriving while the phone is locked remain unread until returning to chat', () => {
   AppState.currentState = 'background';
   const { Harness, library, navigation, agent } = setup();
-  navigation.state = { tab: 'terminal', lastNonTerminalTab: 'chats' };
+  navigation.state = { tab: 'chat', lastNonTerminalTab: 'chats' };
   act(() => {
     renderer = create(<Harness />);
   });

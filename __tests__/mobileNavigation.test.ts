@@ -1,26 +1,18 @@
-import {
-  handleMobileBack,
-  initialMobileNavigation,
-  selectMobileTab,
-} from '../src/mobileNavigation';
+import { handleMobileBack, initialMobileNavigation, selectMobileTab } from '../src/mobileNavigation';
 
-test.each(['hosts', 'herd', 'more'] as const)(
-  'terminal exit returns to herd after entering from %s',
-  previousTab => {
-    const previous = selectMobileTab(initialMobileNavigation, previousTab);
-    const terminal = selectMobileTab(previous, 'terminal');
-    expect(handleMobileBack(terminal).state.tab).toBe('herd');
-  },
-);
+test.each(['chats', 'hosts', 'more'] as const)('terminal exit returns to its entry point, %s', tab => {
+  const terminal = selectMobileTab(selectMobileTab(initialMobileNavigation, tab), 'terminal');
+  expect(handleMobileBack(terminal).state.tab).toBe(tab);
+});
 
-test('back returns non-host roots to hosts and leaves host root to Android', () => {
-  const herd = selectMobileTab(initialMobileNavigation, 'herd');
-  expect(handleMobileBack(herd).state.tab).toBe('hosts');
+test('Chats is the root; back from Servers or Settings returns there', () => {
+  expect(initialMobileNavigation.tab).toBe('chats');
+  for (const tab of ['hosts', 'more'] as const) expect(handleMobileBack(selectMobileTab(initialMobileNavigation, tab)).state.tab).toBe('chats');
   expect(handleMobileBack(initialMobileNavigation).handled).toBe(false);
 });
 
-test('a chat conversation returns to Chats on Android back', () => {
-  const chats = selectMobileTab(initialMobileNavigation, 'chats');
-  const conversation = selectMobileTab(chats, 'terminal');
-  expect(handleMobileBack(conversation).state.tab).toBe('chats');
+test('chat opened from any tab returns to Chats, independently of the terminal', () => {
+  const chat = selectMobileTab(selectMobileTab(initialMobileNavigation, 'more'), 'chat');
+  expect(handleMobileBack(chat).state.tab).toBe('chats');
+  expect(selectMobileTab(chat, 'terminal').tab).toBe('terminal');
 });

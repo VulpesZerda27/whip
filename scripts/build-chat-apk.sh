@@ -22,6 +22,7 @@ export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ndk_bin/aarch64-linux-android
 export CC_aarch64_linux_android="$ndk_bin/aarch64-linux-android24-clang"
 export AR_aarch64_linux_android="$ndk_bin/llvm-ar"
 export NODE_ENV=production
+export WHIP_GIT_COMMIT="$(git rev-parse HEAD)"
 
 node scripts/generate-reins-assets.mjs
 android/gradlew -p android app:assembleRelease \

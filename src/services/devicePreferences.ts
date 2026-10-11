@@ -2,11 +2,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SupportedLanguage } from '../i18n';
 
 import {
-  DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
-  isDeveloperMembershipState,
-  type DeveloperMembershipState,
-} from '../billing/tiers';
-import {
   parseTerminalDoubleTapAction,
   type TerminalDoubleTapAction,
 } from '../lib/terminalDoubleTap';
@@ -88,8 +83,6 @@ export interface DevicePreferences {
   appBackgroundImageUri: string | null;
   appBackgroundDimming: number;
   appGlassEnabled: boolean;
-  developerOptionsEnabled: boolean;
-  developerMembershipState: DeveloperMembershipState;
   language: LanguagePreference;
   keepScreenOn: boolean;
   reopenTerminalOnLaunch: boolean;
@@ -112,8 +105,6 @@ export const defaultDevicePreferences: DevicePreferences = {
   appBackgroundImageUri: null,
   appBackgroundDimming: 60,
   appGlassEnabled: false,
-  developerOptionsEnabled: false,
-  developerMembershipState: DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
   language: 'system',
   keepScreenOn: false,
   reopenTerminalOnLaunch: false,
@@ -273,17 +264,11 @@ function parseDevicePreferences(
         defaultDevicePreferences.appBackgroundDimming,
       ),
       appGlassEnabled: parsed.appGlassEnabled === true,
-      developerOptionsEnabled: parsed.developerOptionsEnabled === true,
-      developerMembershipState: isDeveloperMembershipState(
-        parsed.developerMembershipState,
-      )
-        ? parsed.developerMembershipState
-        : DEFAULT_DEVELOPER_MEMBERSHIP_STATE,
       language: isLanguagePreference(parsed.language)
         ? parsed.language
         : defaultDevicePreferences.language,
       keepScreenOn: parsed.keepScreenOn === true,
-      reopenTerminalOnLaunch: parsed.reopenTerminalOnLaunch === true,
+      reopenTerminalOnLaunch: false,
       agentCommand: typeof parsed.agentCommand === 'string' && parsed.agentCommand.trim()
         ? parsed.agentCommand
         : defaultDevicePreferences.agentCommand,
@@ -315,7 +300,7 @@ function parseDevicePreferences(
         pauseResizeInBackground: typeof terminal.pauseResizeInBackground === 'boolean'
           ? terminal.pauseResizeInBackground
           : defaultDevicePreferences.terminal.pauseResizeInBackground,
-        visualHints: parsed.developerOptionsEnabled === true && terminal.visualHints === true,
+        visualHints: false,
         backgroundImageUri: typeof terminal.backgroundImageUri === 'string' && terminal.backgroundImageUri
           ? terminal.backgroundImageUri
           : null,
@@ -374,7 +359,7 @@ function parseXtermCacheCapacity(value: unknown): number {
 }
 
 function isAppTab(value: unknown): value is AppTab {
-  return value === 'chats' || value === 'hosts' || value === 'herd' || value === 'terminal' || value === 'more';
+  return value === 'chats' || value === 'hosts' || value === 'chat' || value === 'terminal' || value === 'more';
 }
 
 function isAppearancePreference(value: unknown): value is AppearancePreference {

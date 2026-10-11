@@ -572,8 +572,7 @@ export function useSessionConnectionLifecycle({
         });
         hosts.closeEditor();
         if (navigate) {
-          if (initial.server.running) navigation.showTerminal(sessionId);
-          else navigation.showHerd(sessionId);
+          navigation.selectTab('chats');
         }
         return true;
       } catch (connectError) {
@@ -639,11 +638,11 @@ export function useSessionConnectionLifecycle({
   );
 
   const select = useCallback(
-    (sessionId: string, tab: 'herd' | 'terminal' = 'terminal') => {
+    (sessionId: string, tab: 'chats' | 'terminal' = 'terminal') => {
       navigation.selectPane(null);
       commitAppCore(appCore.selectSession(sessionId));
       if (tab === 'terminal') navigation.showTerminal(sessionId);
-      else navigation.showHerd(sessionId);
+      else navigation.selectTab('chats');
     },
     [appCore, commitAppCore, navigation],
   );
@@ -667,22 +666,22 @@ export function useSessionConnectionLifecycle({
           await refresh(existing.id);
           return;
         }
-        select(existing.id, existing.connectionStatus === 'ready' ? 'terminal' : 'herd');
+        select(existing.id, 'chats');
         refresh(existing.id).catch(error =>
           scheduleReconnect(existing.id, error),
         );
         return;
       }
       if (existing && action === 'wait') {
-        if (navigate) select(existing.id, 'herd');
+        if (navigate) select(existing.id, 'chats');
         return;
       }
       if (existing) {
-        if (navigate) select(existing.id, 'herd');
+        if (navigate) select(existing.id, 'chats');
       } else {
         sessionProfilesRef.current.set(host.id, host);
         commitAppCore(appCore.openSession(host.id, host.id, true));
-        if (navigate) navigation.showHerd(host.id);
+        if (navigate) navigation.selectTab('chats');
       }
       hosts.setError(null);
       trackHostConnection(host.id, true);

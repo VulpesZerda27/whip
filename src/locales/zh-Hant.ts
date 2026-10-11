@@ -12,6 +12,7 @@ export const zhHant: Record<string, string> = {
   'usage.duration': '{{hours}}小時 {{minutes}}分鐘',
   'usage.calendarCopy': '本地時間 · 每週從週一開始。從此次更新起在此裝置上記錄。Reins 被暫停或代理狀態無法取得時暫停計時。',
 
+  'common.back': '返回',
   'common.cancel': '取消',
   'common.close': '關閉',
   'common.connect': '連線',
@@ -44,7 +45,9 @@ export const zhHant: Record<string, string> = {
   'markdown.a11y.links': '連結',
   'markdown.a11y.images': '圖片',
   'nav.chats': '聊天',
-  'nav.hosts': '主機',
+  'nav.hosts': '伺服器',
+  'nav.settings': '設定',
+  'hosts.openTerminal': '在 {{host}} 上開啟終端機',
   'nav.herd': '代理群',
   'nav.terminal': '終端機',
   'nav.more': '更多',

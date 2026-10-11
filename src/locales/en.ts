@@ -12,6 +12,7 @@ export const en = {
   'usage.duration': '{{hours}}h {{minutes}}m',
   'usage.calendarCopy': 'Local time · Weeks start Monday. Tracked on this device from this update onward. Counting pauses while Reins is suspended or agent state is unavailable.',
 
+  'common.back': 'Back',
   'common.cancel': 'Cancel',
   'common.close': 'Close',
   'common.connect': 'Connect',
@@ -45,7 +46,9 @@ export const en = {
   'markdown.a11y.images': 'Images',
 
   'nav.chats': 'Chats',
-  'nav.hosts': 'Hosts',
+  'nav.hosts': 'Servers',
+  'nav.settings': 'Settings',
+  'hosts.openTerminal': 'Open terminal on {{host}}',
   'nav.herd': 'Herd',
   'nav.terminal': 'Terminal',
   'nav.more': 'More',

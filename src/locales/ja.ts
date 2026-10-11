@@ -12,6 +12,7 @@ export const ja = {
   'usage.duration': '{{hours}}時間 {{minutes}}分',
   'usage.calendarCopy': '端末の現地時間・週は月曜日始まり。この更新以降、この端末で記録します。Reinsの中断中やエージェントの状態が不明な間は計測を一時停止します。',
 
+  'common.back': '戻る',
   'common.cancel': 'キャンセル',
   'common.close': '閉じる',
   'common.connect': '接続する',
@@ -44,7 +45,9 @@ export const ja = {
   'markdown.a11y.links': 'リンク',
   'markdown.a11y.images': '画像',
   'nav.chats': 'チャット',
-  'nav.hosts': 'ホスト',
+  'nav.hosts': 'サーバー',
+  'nav.settings': '設定',
+  'hosts.openTerminal': '{{host}}でターミナルを開く',
   'nav.herd': 'Herd',
   'nav.terminal': 'ターミナル',
   'nav.more': '詳細',

@@ -42,7 +42,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Allow Reins to scan QR codes for host pairing and browser links, and attach photos you take to remote terminals.</string>
+	<string>Allow Reins to scan server pairing codes and attach photos to chats.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 	  <!-- Do not change NSAllowsArbitraryLoads to true, or you will risk app rejection! -->
@@ -56,14 +56,12 @@
 	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Allow Reins to use Face ID to protect SSH keys and app access.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>Allow Reins to silence persistent agent alerts when you shake your phone.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Reins connects to SSH servers on your local network.</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Allow an agent launched with Reverse Control to request your current location while Reins is open.</string>
-	<key>NSMotionUsageDescription</key>
-	<string>Allow Reins to detect shakes that stop speech, and let an agent launched with Reverse Control request a single motion or pressure sensor reading while Reins is open.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Allow Reins to select terminal and app background images.</string>
+	<string>Allow Reins to attach selected photos to chats.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_expo._tcp</string>

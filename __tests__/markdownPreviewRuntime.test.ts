@@ -23,14 +23,17 @@ beforeEach(() => {
 });
 afterEach(() => dom.window.close());
 
-test('preserves README image dimensions, centered paragraphs, linked badges, and gallery table cells', () => {
-  render(readFileSync(resolve(__dirname, '../README.md'), 'utf8'));
+test('preserves image dimensions, centered paragraphs, linked badges, and gallery table cells', () => {
+  render(`<p align="center"><img src="assets/reins/reins-icon.png" alt="Reins app icon" width="128"></p>
+<a href="https://example.com/ci"><img src="https://example.com/badge.svg" alt="CI status"></a>
+<a href="https://example.com/install"><img src="https://example.com/install.svg" alt="Install badge" width="190"></a>
+<table><tr><td><img src="one.png"></td><td><img src="two.png"></td><td><img src="three.png"></td></tr></table>`);
   const document = dom.window.document;
   const logo = document.querySelector('img[alt="Reins app icon"]')!;
   expect(logo.getAttribute('width')).toBe('128');
   expect(logo.parentElement!.getAttribute('align')).toBe('center');
   expect(document.querySelector('img[alt="CI status"]')!.parentElement!.tagName).toBe('A');
-  expect(document.querySelector('img[alt="Download Whip Herd on the App Store"]')!.getAttribute('width')).toBe('190');
+  expect(document.querySelector('img[alt="Install badge"]')!.getAttribute('width')).toBe('190');
   expect(document.querySelectorAll('table img').length).toBeGreaterThan(2);
   expect(document.querySelector('table img')!.closest('td')).not.toBeNull();
   expect(messages.find(message => message.type === 'images')!.targets).toContain('assets/reins/reins-icon.png');

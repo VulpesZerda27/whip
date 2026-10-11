@@ -14,6 +14,7 @@ export const fr = {
   'usage.duration': '{{hours}} h {{minutes}} min',
   'usage.calendarCopy': 'Heure locale · Les semaines commencent le lundi. Suivi sur cet appareil à partir de cette mise à jour. Le décompte est suspendu lorsque Reins est en veille ou que l’état des agents est indisponible.',
 
+  'common.back': 'Retour',
   'common.cancel': 'Annuler',
   'common.close': 'Fermer',
   'common.connect': 'Se connecter',
@@ -47,7 +48,9 @@ export const fr = {
   'markdown.a11y.images': 'Images',
 
   'nav.chats': 'Discussions',
-  'nav.hosts': 'Hôtes',
+  'nav.hosts': 'Serveurs',
+  'nav.settings': 'Paramètres',
+  'hosts.openTerminal': 'Ouvrir un terminal sur {{host}}',
   'nav.herd': 'Troupeau',
   'nav.terminal': 'Terminal',
   'nav.more': 'Plus',

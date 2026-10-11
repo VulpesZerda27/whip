@@ -14,9 +14,6 @@ jest.mock('../src/services/appLogs', () => ({
 jest.mock('../src/services/latencyDiagnostics', () => ({
   setLatencyDiagnosticsEnabled: jest.fn(() => Promise.resolve()),
 }));
-
-import { effectiveDevicePreferences } from '../src/billing/effectiveSettings';
-import { applyDeveloperOptionsPolicy } from '../src/billing/rollout';
 import { shouldPersistDevicePreferences } from '../src/hooks/useDevicePreferences';
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,
@@ -78,22 +75,6 @@ test('preferences cannot persist while loading, failed, or merely hydrated', () 
   expect(shouldPersistDevicePreferences({ status: 'loaded' }, 1)).toBe(true);
 });
 
-test('requires Rancher for the default fullscreen terminal and preserves disabled choices', () => {
-  expect(effectiveDevicePreferences(defaultDevicePreferences, 'cowboy').terminal.fullscreen)
-    .toBe(false);
-  expect(effectiveDevicePreferences(defaultDevicePreferences, 'rancher').terminal.fullscreen)
-    .toBe(true);
-
-  const disabled = {
-    ...defaultDevicePreferences,
-    fullscreenApp: false,
-    terminal: { ...defaultDevicePreferences.terminal, fullscreen: false },
-  };
-  const rancher = effectiveDevicePreferences(disabled, 'rancher');
-  expect(rancher.fullscreenApp).toBe(false);
-  expect(rancher.terminal.fullscreen).toBe(false);
-});
-
 test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.terminal).toEqual({
     fullscreen: true,
@@ -119,8 +100,6 @@ test('terminal preference defaults match the mobile renderer', () => {
   expect(defaultDevicePreferences.appBackgroundImageUri).toBeNull();
   expect(defaultDevicePreferences.appBackgroundDimming).toBe(60);
   expect(defaultDevicePreferences.appGlassEnabled).toBe(false);
-  expect(defaultDevicePreferences.developerOptionsEnabled).toBe(false);
-  expect(defaultDevicePreferences.developerMembershipState).toBe('cowboy');
   expect(defaultDevicePreferences.language).toBe('system');
   expect(defaultDevicePreferences.biometricForKeys).toBe(false);
   expect(defaultDevicePreferences.biometricOnResume).toBe(false);
@@ -167,8 +146,6 @@ test('migrates the old 11px mobile default to the usable 8px geometry', async ()
     appBackgroundImageUri: null,
     appBackgroundDimming: 60,
     appGlassEnabled: false,
-    developerOptionsEnabled: false,
-    developerMembershipState: 'cowboy',
     language: 'system',
     keepScreenOn: false,
     reopenTerminalOnLaunch: false,
@@ -291,14 +268,14 @@ test('preserves the French language choice across saving and loading', async () 
   await expect(loadDevicePreferences()).resolves.toMatchObject({ language: 'fr' });
 });
 
-test('loads terminal behavior toggles only when explicitly enabled', async () => {
+test('keeps screen-on preference but retires automatic terminal reopening', async () => {
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
     keepScreenOn: true,
     reopenTerminalOnLaunch: true,
   }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     keepScreenOn: true,
-    reopenTerminalOnLaunch: true,
+    reopenTerminalOnLaunch: false,
   });
 
   mockGetItem.mockResolvedValueOnce(JSON.stringify({
@@ -393,42 +370,6 @@ test('pauses background resize commands by default and allows it to be disabled'
   }));
   await expect(loadDevicePreferences()).resolves.toMatchObject({
     terminal: { pauseResizeInBackground: true },
-  });
-});
-
-test('enables terminal visual hints only through developer options', async () => {
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({
-    developerOptionsEnabled: true,
-    terminal: { visualHints: true },
-  }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({
-    developerOptionsEnabled: true,
-    terminal: { visualHints: true },
-  });
-
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({
-    developerOptionsEnabled: false,
-    terminal: { visualHints: true },
-  }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({
-    developerOptionsEnabled: false,
-    terminal: { visualHints: false },
-  });
-});
-
-test('defaults and parses the developer membership simulator state', async () => {
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({
-    developerMembershipState: 'free-trial',
-  }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({
-    developerMembershipState: 'free-trial',
-  });
-
-  mockGetItem.mockResolvedValueOnce(JSON.stringify({
-    developerMembershipState: 'subscriber',
-  }));
-  await expect(loadDevicePreferences()).resolves.toMatchObject({
-    developerMembershipState: 'cowboy',
   });
 });
 
@@ -597,17 +538,8 @@ test('moves an existing app background into its own backed-up storage', async ()
   expect(mockRemoveAppBackground).toHaveBeenCalledWith(previousUri);
 });
 
-test('Store builds ignore persisted developer settings without erasing them', () => {
-  const stored = {
-    ...defaultDevicePreferences,
-    developerOptionsEnabled: true,
-    developerMembershipState: 'rancher' as const,
-    terminal: { ...defaultDevicePreferences.terminal, visualHints: true },
-  };
-  const effective = applyDeveloperOptionsPolicy(stored, false);
-  expect(effective.developerOptionsEnabled).toBe(false);
-  expect(effective.terminal.visualHints).toBe(false);
-  expect(stored.developerOptionsEnabled).toBe(true);
-  expect(stored.terminal.visualHints).toBe(true);
-  expect(applyDeveloperOptionsPolicy(stored, true)).toBe(stored);
+
+test('migrates the removed Herd tab to Chats without losing connection or chat preferences', async () => {
+  mockGetItem.mockResolvedValueOnce(JSON.stringify({lastTab: 'herd', alertsEnabled: false, ttsEnabled: true, biometricForKeys: true, language: 'fr', terminal: {fontSize: 14}}));
+  await expect(loadDevicePreferences()).resolves.toMatchObject({lastTab:'chats', alertsEnabled:false, ttsEnabled:true, biometricForKeys:true, language:'fr', terminal:{fontSize:14}});
 });

@@ -49,9 +49,6 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Validate store billing configuration
-        run: node scripts/check-store-billing.cjs android
-
       - name: Validate package version and tag when building a tag
         env:
           REF_TYPE: ${{ github.ref_type }}

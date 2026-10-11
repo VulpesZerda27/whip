@@ -56,7 +56,7 @@ describe('useAppNavigation', () => {
   test('a chat notification selects chat mode regardless of the previously open tab', () => {
     act(() => { renderer = create(<NavigationHarness onFirstTabMounted={jest.fn()} />); });
     act(() => { navigation?.selectTab('more'); navigation?.showChat(); });
-    expect(navigation?.state.tab).toBe('terminal');
+    expect(navigation?.state.tab).toBe('chat');
     expect(navigation?.state.lastNonTerminalTab).toBe('chats');
   });
 
@@ -73,9 +73,9 @@ describe('useAppNavigation', () => {
     expect(navigation?.mountedTabs.has('hosts')).toBe(true);
     expect(onFirstTabMounted).toHaveBeenCalledTimes(1);
 
-    act(() => navigation?.selectTab('herd'));
+    act(() => navigation?.selectTab('chats'));
 
-    expect(navigation?.mountedTabs.has('herd')).toBe(true);
+    expect(navigation?.mountedTabs.has('chats')).toBe(true);
     expect(onFirstTabMounted).toHaveBeenCalledTimes(1);
   });
 
@@ -112,6 +112,6 @@ describe('useAppNavigation', () => {
     });
 
     expect(handled).toBe(true);
-    expect(navigation?.state.tab).toBe('herd');
+    expect(navigation?.state.tab).toBe('hosts');
   });
 });

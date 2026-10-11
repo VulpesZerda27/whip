@@ -67,6 +67,7 @@ react {
 // React Native tracks JS/TS by default. Include bundled artwork so image-only
 // changes also regenerate the release bundle and its copied Android resources.
 tasks.withType(com.facebook.react.tasks.BundleHermesCTask).configureEach {
+    inputs.property("embeddedGitCommit", providers.environmentVariable("WHIP_GIT_COMMIT").orElse("unknown"))
     inputs.dir("${projectRoot}/assets")
         .withPropertyName("bundledAppAssets")
         .withPathSensitivity(org.gradle.api.tasks.PathSensitivity.RELATIVE)
@@ -118,14 +119,13 @@ android {
     compileSdk = rootProject.ext.compileSdkVersion
 
     namespace = "io.github.kaminarios.whip"
-    sourceSets.androidTest.assets.srcDir("../../packages/react-native-whip-ssh/rust/src/reverse_control/browser")
     // Device regression tests can target an upload-signed local release.
     testBuildType = findProperty('whip.testBuildType') ?: 'debug'
     defaultConfig {
         applicationId = "io.github.vulpeszerda27.whipchat"
         minSdkVersion = rootProject.ext.minSdkVersion
         targetSdkVersion = rootProject.ext.targetSdkVersion
-        versionCode = 239
+        versionCode = 240
         versionName = appVersion
         manifestPlaceholders.whipProfileable = enableProfiling.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -249,9 +249,6 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.webkit:webkit:1.14.0")
-    def shizukuVersion = "13.1.5"
-    implementation("dev.rikka.shizuku:api:${shizukuVersion}")
-    implementation("dev.rikka.shizuku:provider:${shizukuVersion}")
     implementation("com.google.android.gms:play-services-auth-blockstore:16.4.0")
     // 21.4.0 requires Kotlin 2.3 metadata; Expo currently uses Kotlin 2.1.
     implementation("com.google.android.gms:play-services-location:21.3.0")

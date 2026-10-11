@@ -128,7 +128,7 @@ function setup() {
       loadProfileForConnection: async () => profile,
       setError, closeEditor: jest.fn(), markDisconnected: jest.fn(),
     },
-    navigation: { clearSessionView: jest.fn(), selectPane: jest.fn(), selectTab: navigate, showHerd: navigate, showTerminal: navigate },
+    navigation: { clearSessionView: jest.fn(), selectPane: jest.fn(), selectTab: navigate, showTerminal: jest.fn() },
     security: { isKeyProtectionEnabled: () => false },
     terminals: { restore, remove: jest.fn() },
     clearLatency: jest.fn(),
@@ -408,4 +408,12 @@ test('unmount detaches UI and remount rebinds the existing process runtime', asy
   await act(async () => { await lifecycle.closeHostById(profile.id); });
   expect(mockClients[1].disconnect).toHaveBeenCalledTimes(1);
   expect(mockNativeHosts.size).toBe(0);
+});
+
+
+test('connecting a saved server opens Chats instead of a terminal', async () => {
+  const { navigate } = setup();
+  await act(async () => { await lifecycle.connectSavedHost(profile); });
+  expect(navigate).toHaveBeenCalledWith('chats');
+  expect(mockConnect).toHaveBeenCalledWith(profile, []);
 });

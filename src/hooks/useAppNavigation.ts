@@ -33,20 +33,12 @@ interface AppNavigationOptions {
 export interface AppNavigationController {
   state: MobileNavigationState;
   mountedTabs: ReadonlySet<AppTab>;
-  herdHostFilterId: string | null;
-  herdWorkspaceFilterIds: Readonly<Record<string, string | null>>;
   selectedPaneId: string | null;
   licensesOpen: boolean;
   selectTab: (tab: AppTab) => void;
   selectPane: (paneId: string | null) => void;
-  selectHerdHost: (sessionId: string | null) => void;
-  setHerdWorkspaceFilter: (
-    sessionId: string,
-    workspaceId: string | null,
-  ) => void;
   showTerminal: (sessionId?: string) => void;
   showChat: () => void;
-  showHerd: (sessionId?: string, workspaceId?: string | null) => void;
   clearSessionView: (sessionId: string) => void;
   openLicenses: () => void;
   closeLicenses: () => void;
@@ -65,10 +57,6 @@ export function useAppNavigation({
   const [mountedTabs, setMountedTabs] = useState<ReadonlySet<AppTab>>(
     () => new Set(),
   );
-  const [herdHostFilterId, setHerdHostFilterId] = useState<string | null>(null);
-  const [herdWorkspaceFilterIds, setHerdWorkspaceFilterIds] = useState<
-    Record<string, string | null>
-  >({});
   const [selectedPaneId, setSelectedPaneId] = useState<string | null>(null);
   const [licensesOpen, setLicensesOpen] = useState(false);
   const hydratedRef = useRef(false);
@@ -98,7 +86,7 @@ export function useAppNavigation({
     setState(current =>
       selectMobileTab(
         current,
-        preferredTab === 'terminal' ? 'chats' : preferredTab,
+        preferredTab === 'hosts' || preferredTab === 'more' ? preferredTab : 'chats',
       ),
     );
   }, [preferencesLoaded, preferredTab]);
@@ -159,17 +147,6 @@ export function useAppNavigation({
     setState(current => selectMobileTab(current, tab));
   }, []);
 
-  const setHerdWorkspaceFilter = useCallback(
-    (sessionId: string, workspaceId: string | null) => {
-      setHerdWorkspaceFilterIds(current =>
-        current[sessionId] === workspaceId
-          ? current
-          : { ...current, [sessionId]: workspaceId },
-      );
-    },
-    [],
-  );
-
   const showTerminal = useCallback((_sessionId?: string) => {
     setSelectedPaneId(null);
     setState(current => selectMobileTab(current, 'terminal'));
@@ -177,29 +154,11 @@ export function useAppNavigation({
 
   const showChat = useCallback(() => {
     setSelectedPaneId(null);
-    setState(current => selectMobileTab(selectMobileTab(current, 'chats'), 'terminal'));
+    setState(current => selectMobileTab(current, 'chat'));
   }, []);
 
-  const showHerd = useCallback(
-    (sessionId?: string, workspaceId?: string | null) => {
-      if (sessionId) {
-        setHerdHostFilterId(sessionId);
-        if (workspaceId) setHerdWorkspaceFilter(sessionId, workspaceId);
-      }
-      setState(current => selectMobileTab(current, 'herd'));
-    },
-    [setHerdWorkspaceFilter],
-  );
-
-  const clearSessionView = useCallback((sessionId: string) => {
+  const clearSessionView = useCallback((_sessionId: string) => {
     setSelectedPaneId(null);
-    setHerdHostFilterId(current => (current === sessionId ? null : current));
-    setHerdWorkspaceFilterIds(current => {
-      if (!(sessionId in current)) return current;
-      const next = { ...current };
-      delete next[sessionId];
-      return next;
-    });
   }, []);
   const openLicenses = useCallback(() => setLicensesOpen(true), []);
   const closeLicenses = useCallback(() => setLicensesOpen(false), []);
@@ -208,17 +167,12 @@ export function useAppNavigation({
     () => ({
       state,
       mountedTabs,
-      herdHostFilterId,
-      herdWorkspaceFilterIds,
       selectedPaneId,
       licensesOpen,
       selectTab,
       selectPane: setSelectedPaneId,
-      selectHerdHost: setHerdHostFilterId,
-      setHerdWorkspaceFilter,
       showTerminal,
       showChat,
-      showHerd,
       clearSessionView,
       openLicenses,
       closeLicenses,
@@ -226,15 +180,11 @@ export function useAppNavigation({
     [
       clearSessionView,
       closeLicenses,
-      herdHostFilterId,
-      herdWorkspaceFilterIds,
       licensesOpen,
       mountedTabs,
       openLicenses,
       selectTab,
       selectedPaneId,
-      setHerdWorkspaceFilter,
-      showHerd,
       showTerminal,
       showChat,
       state,

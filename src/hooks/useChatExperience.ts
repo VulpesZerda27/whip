@@ -26,8 +26,7 @@ export function useChatExperience(
   const chatVisible =
     foreground &&
     enabled &&
-    navigation.state.tab === 'terminal' &&
-    navigation.state.lastNonTerminalTab === 'chats';
+    navigation.state.tab === 'chat';
   const activeHostId = chatVisible ? sessions.activeSession?.hostId : undefined;
 
   useEffect(() => {
@@ -84,7 +83,7 @@ export function useChatExperience(
       const host = hosts.find(item => item.id === target.hostId);
       if (!host)
         throw new Error(
-          'This server was removed. Add it in Hosts to reconnect.',
+          'This server was removed. Add it in Servers to reconnect.',
         );
       let session = sessions
         .getState()

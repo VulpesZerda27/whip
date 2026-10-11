@@ -1,29 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  ReverseControlState,
-  type AgentControlView,
-  type HostRuntimeConnection,
-} from 'react-native-whip-ssh';
-import type { TFunction } from 'i18next';
+import type { HostRuntimeConnection } from 'react-native-whip-ssh';
+import { isUnknownRecord } from '../lib/unknown';
 
 const PREFIX = 'whip.agent.preferences.v1.';
-
-export function reverseControlStateLabel(
-  preference: AgentControlView | undefined,
-  t: TFunction,
-): string {
-  const state = preference?.reverseControlState ?? ReverseControlState.Off;
-  switch (state) {
-    case ReverseControlState.Connected:
-      return t('herd.reverseControlConnected');
-    case ReverseControlState.Recovering:
-      return t('herd.reverseControlRecovering');
-    case ReverseControlState.RestartRequired:
-      return t('herd.reverseControlRestart');
-    case ReverseControlState.Off:
-      return t('herd.reverseControlOff');
-  }
-}
 
 /** Storage only; Rust owns identity, defaults, and launch decisions. */
 export class AgentPreferencesStorage {
@@ -37,7 +16,13 @@ export class AgentPreferencesStorage {
     const pending = (async () => {
       await this.writes.get(hostId);
       const value = await AsyncStorage.getItem(`${PREFIX}${hostId}`);
-      if (value) runtime.restoreAgentPreferences(value);
+      if (value) {
+        const saved: unknown = JSON.parse(value);
+        if (isUnknownRecord(saved) && Array.isArray(saved.agents)) {
+          saved.agents = saved.agents.map((agent: unknown) => isUnknownRecord(agent) ? { ...agent, reverseControl: false } : agent);
+        }
+        runtime.restoreAgentPreferences(JSON.stringify(saved));
+      }
       if (value) this.savedValues.set(runtime, value);
     })();
     this.loads.set(runtime, pending);

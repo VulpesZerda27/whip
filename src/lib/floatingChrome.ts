@@ -15,8 +15,8 @@ export interface TerminalViewportLayout {
   terminalInsets: VisualContentInsets;
 }
 
-export const BOTTOM_NAVIGATION_BASE_HEIGHT = 120;
-export const BOTTOM_NAVIGATION_BOTTOM_OFFSET = 16;
+export const BOTTOM_NAVIGATION_BASE_HEIGHT = 64;
+export const BOTTOM_NAVIGATION_BOTTOM_OFFSET = 0;
 export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
 export const SESSION_TAB_BAR_HEIGHT = 55;
 export const SESSION_PANE_BAR_HEIGHT = 44;

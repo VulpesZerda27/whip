@@ -196,7 +196,7 @@ exec codex app-server proxy
             }
         });
         client.tasks.lock().push(wake);
-        client.request("initialize", json!({"clientInfo":{"name":"whip_chat","title":"Reins","version":"1.8.13"},"capabilities":{"experimentalApi":true}})).await?;
+        client.request("initialize", json!({"clientInfo":{"name":"whip_chat","title":"Reins","version":"1.8.14"},"capabilities":{"experimentalApi":true}})).await?;
         client
             .send(json!({"method":"initialized","params":{}}))
             .await?;

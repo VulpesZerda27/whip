@@ -2,12 +2,13 @@
 
 Reins (formerly Whip Chat) is an independent fork of Whip, modified in October
 2026 and licensed under AGPL-3.0-or-later. Original credits and license notices
-remain available in More → About → Open-source licenses. This fork adds a **Chats** home screen to Whip. New installs open there;
-the upstream Hosts, Herd, Terminal and More surfaces are still available.
+remain available in Settings → About → Open-source licenses. Reins focuses on
+**Chats**, **Servers**, and **Settings**. Terminal access is a secondary action
+on each saved server and within conversations.
 
 ## Daily use
 
-1. Add your SSH servers under **Hosts**, using the same host, port, username,
+1. Add your SSH servers under **Servers**, using the same host, port, username,
    key/password and Herdr session name as official Whip. Tailscale on the phone
    must be connected if you use Tailnet addresses.
 2. Open **Chats** and connect the servers you want to use. Chats merges existing
@@ -18,7 +19,7 @@ the upstream Hosts, Herd, Terminal and More surfaces are still available.
    You can search long project lists or enter an absolute directory manually.
 4. Save a favorite project to reuse that server, directory, provider, model and
    effort. Start the conversation after the server readiness check passes.
-   Whip opens that agent's native transcript and a persistent composer.
+   Reins opens that agent's native transcript and a persistent composer.
 5. Tap the microphone, speak, and review the resulting text before sending.
 
 Model and effort defaults are remembered separately for each provider. Blank
@@ -73,7 +74,7 @@ or intermediate replies. Only an explicitly full turn snapshot replaces its item
 list; partial and older unmarked notifications preserve the accumulated history.
 The displayed chat stays tied to its thread even if a desktop terminal switches to
 another conversation. This does not repair upstream Herdr’s terminal-pane mapping;
-the separate Herd/Terminal surfaces still have that upstream limitation.
+the optional Herdr terminal view still has that upstream limitation.
 
 New Codex chats run without creating a terminal pane. **Open terminal** explicitly
 creates a terminal resuming the same thread. Chat supports text, image/file
@@ -140,7 +141,7 @@ use the conversation's working directory. Read/write tool cards also have tappab
 filenames. PNGs and other supported images open in the zoomable image viewer;
 documents use the existing file previews. Local Markdown images become preview
 links instead of trying to load server paths from the phone. Files are fetched
-only when opened. Web links in replies open the built-in browser, including bare URLs,
+only when opened. Web links in replies open the phone’s browser, including bare URLs,
 Markdown links, standalone URLs in backticks, and URLs on web tool cards.
 Fenced code and shell commands retain their original formatting.
 
@@ -226,6 +227,19 @@ which also allows ARM translation on compatible x86 Android emulators.
 The signing key is private and is never included in the APK or repository.
 
 ## Validation
+
+Version 1.8.14 removes the separate Herd dashboard, memberships/purchases, usage
+statistics, feedback worker, embedded browser and phone-control/Shizuku features.
+It removes purchase, location and privileged-access permissions from Android.
+The client still includes terminal and remote file/preview support; its shared
+native Herdr library retains protocol APIs used by other upstream clients.
+Settings focuses on notifications, SSH security, language/theme and basic terminal
+preferences. Old Herd navigation migrates to Chats and automatic terminal reopening
+is disabled. Existing credentials, server profiles, drafts, favorites and provider
+settings keep their original storage and Android application identity.
+
+The checks below for earlier releases describe their behavior at that time.
+
 
 Version 1.8.13 renames this fork to Reins and applies the supplied standard, dark
 and tinted artwork to the app and Android launcher. The application ID and signing

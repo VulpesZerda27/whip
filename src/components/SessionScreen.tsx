@@ -18,6 +18,7 @@ import {
 import {
   ActivityIndicator,
   AppState,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -26,12 +27,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 import { readCachedAgentTranscript } from 'react-native-whip-ssh';
-import WebView from 'react-native-webview';
-import { browserRegistry } from '../browser/registry';
-import { supportsBrowserControl } from '../browser/native';
-import { OpenBrowserButton } from '../browser/OpenBrowserButton';
-import { BrowserTunnelingSetting } from '../browser/BrowserTunnelingSetting';
-import { browserLibrary } from '../browser/library';
 import {
   orderByAgentStatusPriority,
   tabAgentStateChangeSequence,
@@ -194,17 +189,10 @@ type PendingFocus = {
   previousId: string | null;
 };
 
-interface BrowserWebViewHandle {
-  goBack: () => void;
-}
-
-const BROWSER_WEBVIEW_STYLE = { flex: 1 } as const;
-
 export function SessionScreen({
   draftSaveError,
   onToggleReadAloud,
   preferChat = false,
-  hostId,
   hostSessionId,
   visible,
   ttsEnabled,
@@ -271,10 +259,6 @@ export function SessionScreen({
   const [terminalLinks, setTerminalLinks] = useState<string[]>([]);
   const [linksBusy, setLinksBusy] = useState(false);
   const [linksError, setLinksError] = useState<string | null>(null);
-  const [browserUrl, setBrowserUrl] = useState<string | null>(null);
-  const [browserDisplayUrl, setBrowserDisplayUrl] = useState('');
-  const [browserCanGoBack, setBrowserCanGoBack] = useState(false);
-  const [browserLoading, setBrowserLoading] = useState(false);
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [attachmentTerminalId, setAttachmentTerminalId] = useState<
     string | null
@@ -294,7 +278,6 @@ export function SessionScreen({
     previewUri: string | null;
     dispose: () => void;
   } | null>(null);
-  const browserWebView = useRef<BrowserWebViewHandle | null>(null);
   const browserRequestRef = useRef(0);
   const pendingPaneFocus = useRef<string | null>(null);
   const lastActivePaneId = useRef<string | null>(null);
@@ -650,7 +633,6 @@ export function SessionScreen({
   const scanTerminalLinks = () => {
     browserRequestRef.current += 1;
     setLinksOpen(true);
-    setBrowserUrl(null);
     setTerminalLinks([]);
     setLinksError(null);
     setLinksBusy(true);
@@ -660,55 +642,19 @@ export function SessionScreen({
   const dismissLinks = () => {
     browserRequestRef.current += 1;
     setLinksOpen(false);
-    setBrowserUrl(null);
-    setBrowserCanGoBack(false);
   };
 
-  const leaveBrowser = () => {
-    browserRequestRef.current += 1;
-    setBrowserUrl(null);
-    setBrowserCanGoBack(false);
-    setBrowserLoading(false);
-  };
-
-  const openNativeBrowser = () => {
-    if (!supportsBrowserControl() || !client) return undefined;
-    const shared = browserRegistry.forPane(client.native.runtimeId, activePane?.pane_id);
-    const sessionId = shared?.identity.sessionId || 'manual-' + hostSessionId + '-' + (activePane?.terminal_id || 'shell');
-    const entry = shared || browserRegistry.ensure({
-      runtimeId: client.native.runtimeId,
-      sessionId,
-      paneId: activePane?.pane_id || '',
-      terminalId: activePane?.terminal_id || '',
-    }, client.native, false);
-    if (!entry.controller.tabs.length) entry.controller.newTab();
-    browserRegistry.open(entry.identity.sessionId);
-    setLinksOpen(false);
-    return entry;
-  };
   const openWebLink = async (value: string) => {
     const request = ++browserRequestRef.current;
     setLinksBusy(true);
     setLinksError(null);
     try {
-      const target = terminalWebLinkTarget(value);
-      const entry = openNativeBrowser();
-      if (entry) {
-        await entry.controller.action('navigate', { url: target.url });
-        return;
-      }
-      setLinksOpen(true);
-      await browserLibrary.load();
-      if (browserLibrary.tunneling(hostId)) {
-        throw new Error(t('browser.tunnelingUnavailable'));
-      }
-      if (request !== browserRequestRef.current) return;
-      setBrowserDisplayUrl(target.url);
-      setBrowserUrl(target.url);
-      setBrowserCanGoBack(false);
-      setBrowserLoading(true);
+      await Linking.openURL(terminalWebLinkTarget(value).url);
     } catch (reason) {
-      if (request === browserRequestRef.current) setLinksError(String(reason));
+      if (request === browserRequestRef.current) {
+        setLinksError(String(reason));
+        setLinksOpen(true);
+      }
     } finally {
       if (request === browserRequestRef.current) setLinksBusy(false);
     }
@@ -735,9 +681,6 @@ export function SessionScreen({
     setEditingPaneId(null);
     setAppAlert(null);
     setLinksOpen(false);
-    setBrowserUrl(null);
-    setBrowserCanGoBack(false);
-    setBrowserLoading(false);
     setAttachmentsOpen(false);
     setPasteRequest(null);
     reportedChatFailureGenerationsRef.current.clear();
@@ -1428,7 +1371,7 @@ export function SessionScreen({
           style={terminalSessionChrome.visible ? undefined : { display: 'none' }}
         >
           <Button
-            accessibilityLabel={preferChat ? 'Back to Chats' : t('session.backToHerd')}
+            accessibilityLabel={preferChat ? 'Back to Chats' : t('common.back')}
             className={cn(
               'h-[55px] items-center justify-center rounded-none px-0 py-0',
               Platform.OS === 'ios' ? 'w-14' : 'w-[42px]',
@@ -1533,12 +1476,6 @@ export function SessionScreen({
                   );
                 })}
               </ScrollView>
-              {client && (
-                <OpenBrowserButton
-                  runtimeId={client.native.runtimeId}
-                  paneId={activePane?.pane_id}
-                />
-              )}
               {client && <Button
                 accessibilityLabel={t('session.newTab')}
                 className={cn(
@@ -1967,7 +1904,7 @@ export function SessionScreen({
               variant="secondary"
               onPress={hapticPress(onExit)}
             >
-              <Text>{t('session.backToHerd')}</Text>
+              <Text>{t('common.back')}</Text>
             </Button>
           </View>
         )}
@@ -2027,7 +1964,7 @@ export function SessionScreen({
         />
         <Modal
           animationType="slide"
-          onRequestClose={browserUrl ? leaveBrowser : dismissLinks}
+          onRequestClose={dismissLinks}
           statusBarTranslucent
           visible={linksOpen}
         >
@@ -2038,70 +1975,6 @@ export function SessionScreen({
               paddingBottom: safeAreaInsets.bottom,
             }}
           >
-            {browserUrl ? (
-              <>
-                <View className="h-12 flex-row items-center border-b border-border bg-background">
-                  <Button
-                    accessibilityLabel={t('terminal.browserBack')}
-                    className="h-12 w-12 rounded-none px-0"
-                    variant="ghost"
-                    onPress={() =>
-                      browserCanGoBack
-                        ? browserWebView.current?.goBack()
-                        : leaveBrowser()
-                    }
-                  >
-                    <ChevronLeft size={21} color={colors.text} />
-                  </Button>
-                  <View className="min-w-0 flex-1 px-1">
-                    <Text
-                      numberOfLines={1}
-                      className="text-[11px] font-semibold text-foreground"
-                    >
-                      {terminalWebLinkTarget(browserDisplayUrl).hostname}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      className="font-mono text-[8px] text-muted-foreground"
-                    >
-                      {browserDisplayUrl}
-                    </Text>
-                  </View>
-                  <Button
-                    accessibilityLabel={t('terminal.closeBrowser')}
-                    className="h-12 w-12 rounded-none px-0"
-                    variant="ghost"
-                    onPress={dismissLinks}
-                  >
-                    <X size={19} color={colors.text} />
-                  </Button>
-                </View>
-                <View className="relative flex-1 bg-white">
-                  <WebView
-                    ref={value => {
-                      browserWebView.current = value;
-                    }}
-                    source={{ uri: browserUrl }}
-                    javaScriptEnabled
-                    onLoadStart={() => setBrowserLoading(true)}
-                    onLoadEnd={() => setBrowserLoading(false)}
-                    onNavigationStateChange={state =>
-                      setBrowserCanGoBack(state.canGoBack)
-                    }
-                    style={BROWSER_WEBVIEW_STYLE}
-                  />
-                  {browserLoading && (
-                    <View
-                      pointerEvents="none"
-                      className="absolute inset-x-0 top-0 items-center py-2"
-                    >
-                      <ActivityIndicator color={colors.primary} />
-                    </View>
-                  )}
-                </View>
-              </>
-            ) : (
-              <>
                 <View className="h-14 flex-row items-center border-b border-border px-4">
                   <View className="min-w-0 flex-1">
                     <Text className="text-[17px] font-bold text-foreground">
@@ -2120,28 +1993,6 @@ export function SessionScreen({
                     <X size={19} color={colors.text} />
                   </Button>
                 </View>
-                {client && (
-                  <View className="border-b border-border px-4 py-3">
-                    <BrowserTunnelingSetting runtimeId={client.native.runtimeId} />
-                  </View>
-                )}
-                {client && supportsBrowserControl() && (
-                  <View className="border-b border-border px-4 py-3">
-                    <Button
-                      accessibilityLabel={t('terminal.openBrowser')}
-                      variant="secondary"
-                      onPress={() => {
-                        try {
-                          openNativeBrowser();
-                        } catch (reason) {
-                          setLinksError(reason instanceof Error ? reason.message : 'Could not open browser.');
-                        }
-                      }}
-                    >
-                      <Text>{t('terminal.openBrowser')}</Text>
-                    </Button>
-                  </View>
-                )}
                 {linksBusy ? (
                   <View className="flex-1 items-center justify-center gap-3 p-8">
                     <ActivityIndicator color={colors.primary} />
@@ -2206,8 +2057,6 @@ export function SessionScreen({
                     </Text>
                   </View>
                 )}
-              </>
-            )}
           </View>
         </Modal>
       </View>
