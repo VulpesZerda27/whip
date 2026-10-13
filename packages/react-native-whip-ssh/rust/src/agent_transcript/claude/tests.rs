@@ -800,3 +800,133 @@ fn new_session_is_usable_before_its_first_file_and_later_loads_the_real_history(
     assert!(!core.awaiting_first_file());
     assert!(core.mark_waiting_for_creation().is_none());
 }
+
+fn queue(operation: &str, content: Option<&str>) -> Value {
+    let mut record = json!({"type":"queue-operation", "operation":operation, "sessionId":SESSION, "timestamp":"2026-09-29T12:00:02Z"});
+    if let Some(content) = content {
+        record["content"] = json!(content);
+    }
+    record
+}
+fn queued_command(id: &str, parent: &str, attachment: Value) -> Value {
+    json!({"type":"attachment", "uuid":id, "parentUuid":parent, "isSidechain":false, "sessionId":SESSION, "timestamp":"2026-09-29T12:00:02Z", "attachment":attachment})
+}
+fn human_command(prompt: Value) -> Value {
+    json!({"type":"queued_command", "prompt":prompt, "commandMode":"prompt", "origin":{"kind":"human"}, "humanTurn":true})
+}
+fn texts(message: &AgentTranscriptMessage) -> Vec<&str> {
+    message
+        .parts
+        .iter()
+        .filter_map(|part| match part {
+            AgentTranscriptPart::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn message_sent_while_claude_works_stays_visible_until_it_joins_the_turn() {
+    let notification = "<task-notification>\n<task-id>b1</task-id>\n</task-notification>";
+    let queued = [
+        tool_prefix(),
+        line(queue("enqueue", Some("Use the staging database"))),
+        line(queue("enqueue", Some(notification))),
+    ]
+    .concat();
+    let absorbed = [
+        line(queue("remove", Some(notification))),
+        line(queue("remove", Some("Use the staging database"))),
+        line(result(json!("ok"), false)),
+        line(queued_command(
+            "note",
+            "r",
+            json!({"type":"queued_command", "prompt":notification, "commandMode":"task-notification"}),
+        )),
+        line(queued_command(
+            "steer",
+            "note",
+            human_command(json!("Use the staging database")),
+        )),
+        line(assistant(
+            "reply",
+            "steer",
+            json!([{"type":"text","text":"Switching to staging."}]),
+        )),
+    ]
+    .concat();
+    let mut core = ClaudeSessionCore::new(SESSION);
+    let binding = core.bind_source(
+        "/transcript".into(),
+        "1:2".into(),
+        (queued.len() + absorbed.len()) as u64,
+    );
+    core.ingest(binding.source_generation, &queued).unwrap();
+    let pending = core.state();
+    assert_eq!(pending.messages.len(), 3);
+    let message = &pending.messages[2];
+    assert!(message.id.starts_with("claude-queued-"));
+    assert_eq!(message.role, AgentMessageRole::User);
+    assert_eq!(texts(message), ["Use the staging database"]);
+    assert_eq!(pending.turns.len(), 2);
+    assert_eq!(pending.turns[1].status, AgentTurnStatus::Working);
+
+    core.ingest(binding.source_generation, &absorbed).unwrap();
+    let state = core.state();
+    assert_eq!(ids(&state), ["u", "a", "steer", "reply"]);
+    assert_eq!(texts(&state.messages[2]), ["Use the staging database"]);
+    let turns = state
+        .turns
+        .iter()
+        .map(|turn| {
+            (
+                turn.user_message_id.as_deref(),
+                turn.assistant_message_ids.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        turns,
+        [
+            (Some("u"), vec!["a".to_owned()]),
+            (Some("steer"), vec!["reply".to_owned()]),
+        ]
+    );
+}
+
+#[test]
+fn queued_images_agent_messages_and_queue_bookkeeping() {
+    let image = json!([
+        {"type":"text","text":"Compare with this [Image #2]"},
+        {"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0K"}}
+    ]);
+    let peer = json!({"type":"queued_command", "prompt":"<agent-message from=\"a1\">\nDone\n</agent-message>", "commandMode":"prompt", "origin":{"kind":"peer"}, "isMeta":true});
+    let bytes = [
+        tool_prefix(),
+        line(result(json!("ok"), false)),
+        line(queued_command("peer", "r", peer)),
+        line(queued_command("steer", "peer", human_command(image))),
+        line(queue("enqueue", Some("first"))),
+        line(queue("enqueue", Some("/voice"))),
+        line(queue("dequeue", None)),
+    ]
+    .concat();
+    let core = parse(&bytes);
+    let state = core.state();
+    assert_eq!(state.messages[2].id, "steer");
+    assert_eq!(texts(&state.messages[2]), ["Compare with this [Image #2]"]);
+    assert!(state.messages[2].parts.iter().any(|part| matches!(
+        part,
+        AgentTranscriptPart::Image { source, .. } if source == "data:image/png;base64,iVBORw0K"
+    )));
+    // `dequeue` takes the oldest entry, as Claude does when a turn ends.
+    assert_eq!(state.messages.len(), 4);
+    assert_eq!(texts(&state.messages[3]), ["/voice"]);
+
+    let mut restored = ClaudeSessionCore::new(SESSION);
+    restored.restore_cache(&core.cache_blob().unwrap()).unwrap();
+    assert_eq!(restored.state().messages, state.messages);
+
+    let cleared = parse(&[bytes, line(queue("popAll", Some("/voice")))].concat()).state();
+    assert_eq!(ids(&cleared), ["u", "a", "steer"]);
+}

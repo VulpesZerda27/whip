@@ -17,7 +17,7 @@ use super::projection::{
     timestamp_ms,
 };
 
-const CACHE_VERSION: u32 = 3;
+const CACHE_VERSION: u32 = 4;
 const MAX_TEXT_BYTES: usize = 64 * 1024;
 const MAX_BLOCKS: usize = 256;
 const MAX_FIELDS: usize = 64;
@@ -89,6 +89,54 @@ fn result_text(value: &Value) -> Option<String> {
     let mut output = String::new();
     append(value, &mut output, 0);
     (!output.is_empty()).then_some(output)
+}
+
+/// Claude Code also queues text for itself: background task results and
+/// messages from subagents or other sessions. Those are not the person's input.
+fn machine_prompt(text: &str) -> bool {
+    let text = text.trim_start();
+    [
+        "<task-notification>",
+        "<agent-message",
+        "<cross-session-message",
+    ]
+    .iter()
+    .any(|prefix| text.starts_with(prefix))
+}
+
+/// A message sent while Claude works is persisted as a queued command once
+/// Claude absorbs it into the running turn, not as a user record. Returns the
+/// prompt (a string or content blocks) only for the person's own messages.
+fn queued_user_prompt(record: &Value) -> Option<&Value> {
+    let attachment = &record["attachment"];
+    if record["type"] != "attachment"
+        || attachment["type"] != "queued_command"
+        || attachment["commandMode"] != "prompt"
+        || attachment["isMeta"] == true
+    {
+        return None;
+    }
+    let prompt = &attachment["prompt"];
+    let human = match attachment["origin"]["kind"].as_str() {
+        Some(kind) => kind == "human",
+        None => !prompt.as_str().is_some_and(machine_prompt),
+    };
+    human.then_some(prompt)
+}
+
+fn queue_text(content: &Value) -> Option<String> {
+    match content {
+        Value::String(text) => Some(bounded(text)),
+        Value::Array(blocks) => Some(bounded(
+            &blocks
+                .iter()
+                .take(MAX_BLOCKS)
+                .filter_map(|block| block["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )),
+        _ => None,
+    }
 }
 
 fn input_fields(input: &Value) -> Vec<AgentField> {
@@ -224,6 +272,14 @@ struct ClaudeNode {
     results: Vec<ToolCompletion>,
 }
 
+/// One entry of Claude Code's prompt queue, in file order.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct QueuedPrompt {
+    order: u64,
+    text: String,
+    at: Option<u64>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ClaudeTranscriptAdapter {
     session_id: String,
@@ -233,6 +289,7 @@ pub struct ClaudeTranscriptAdapter {
     directory: Option<String>,
     leaf: Option<String>,
     leaf_order: u64,
+    queued: Vec<QueuedPrompt>,
     #[serde(skip)]
     indexes: HashMap<String, usize>,
 }
@@ -248,6 +305,33 @@ impl ClaudeTranscriptAdapter {
             directory: None,
             leaf: None,
             leaf_order: 0,
+            queued: Vec::new(),
+        }
+    }
+
+    /// Mirrors Claude Code's FIFO prompt queue, so a message sent while Claude
+    /// works stays visible until Claude absorbs it or starts a turn with it.
+    fn queue_operation(&mut self, record: &Value, order: u64) {
+        let text = queue_text(&record["content"]);
+        match record["operation"].as_str() {
+            Some("enqueue") => {
+                if let Some(text) = text {
+                    let at = timestamp_ms(record.get("timestamp"));
+                    self.queued.push(QueuedPrompt { order, text, at });
+                }
+            }
+            Some("remove") => {
+                if let Some(index) =
+                    text.and_then(|text| self.queued.iter().position(|queued| queued.text == text))
+                {
+                    self.queued.remove(index);
+                }
+            }
+            Some("dequeue") if !self.queued.is_empty() => {
+                self.queued.remove(0);
+            }
+            Some("popAll") => self.queued.clear(),
+            _ => {}
         }
     }
 
@@ -276,10 +360,12 @@ impl ClaudeTranscriptAdapter {
                     self.leaf_order = order;
                 }
                 "system" if record["subtype"] == "compact_boundary" => self.leaf = None,
+                "queue-operation" => self.queue_operation(record, order),
                 _ => {}
             }
         }
-        let chat = matches!(kind, "user" | "assistant");
+        let queued_prompt = queued_user_prompt(record);
+        let chat = matches!(kind, "user" | "assistant") || queued_prompt.is_some();
         let Some(uuid) =
             string(record, "uuid").or_else(|| chat.then(|| format!("claude-offset-{order}")))
         else {
@@ -296,7 +382,7 @@ impl ClaudeTranscriptAdapter {
         let mut parts = Vec::new();
         let mut results = Vec::new();
         if chat && !sidechain {
-            let content = &record["message"]["content"];
+            let content = queued_prompt.unwrap_or(&record["message"]["content"]);
             let blocks = match content {
                 Value::Array(blocks) => blocks.iter().take(MAX_BLOCKS).collect::<Vec<_>>(),
                 _ => vec![content],
@@ -605,6 +691,31 @@ impl ClaudeTranscriptAdapter {
                 messages.push(message);
             }
             results.extend(&node.results);
+        }
+        // Claude Code shows queued messages after the work in progress until it
+        // reads them; they are not in the conversation graph before that.
+        for queued in self
+            .queued
+            .iter()
+            .filter(|queued| !machine_prompt(&queued.text))
+        {
+            let id = format!("claude-queued-{}", queued.order);
+            let mut message = AgentTranscriptMessage {
+                id: id.clone(),
+                role: AgentMessageRole::User,
+                parent_id: None,
+                created_at_ms: queued.at,
+                completed_at_ms: None,
+                error: None,
+                parts: vec![AgentTranscriptPart::Text {
+                    id: format!("{id}:0"),
+                    text: queued.text.clone(),
+                    timestamp_ms: queued.at,
+                }],
+                diffs: Vec::new(),
+            };
+            normalize_user_images(&mut message);
+            messages.push(message);
         }
         let mut locations = HashMap::new();
         for (mi, message) in messages.iter().enumerate() {
