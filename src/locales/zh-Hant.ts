@@ -890,6 +890,7 @@ export const zhHant: Record<string, string> = {
   'files.sort.descending': '遞減',
   'files.loading': '正在載入遠端目錄…',
   'files.listFailed': '無法開啟此目錄',
+  'files.notFound': '伺服器上不存在此路徑。',
   'files.retry': '再試一次',
   'files.empty': '此目錄是空的',
   'files.directory': '目錄',

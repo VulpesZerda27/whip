@@ -106,6 +106,12 @@ const CHAT_FOLLOW_END_THRESHOLD = 72;
 const nearEnd = (offset: number, maximumOffset: number) =>
   maximumOffset - offset < CHAT_FOLLOW_END_THRESHOLD;
 const CHAT_INITIAL_END_THRESHOLD = 2;
+/**
+ * Readiness waits for the list to report its position, but a list whose offset
+ * is clamped by a content or viewport change (an attachment row appearing, an
+ * image finishing loading) reports nothing. Reveal Chat after this long anyway.
+ */
+export const CHAT_VIEWPORT_REVEAL_FALLBACK_MS = 700;
 const CHAT_SCROLL_OFFSET_EPSILON = 1;
 const SMALL_ICON_HIT_SLOP = 8;
 const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
@@ -1230,6 +1236,36 @@ export function AgentChatView({
   useLayoutEffect(() => {
     updateViewportActivity();
   }, [active]);
+
+  const revealStalledViewport = useEffectEvent(() => {
+    const readiness = initialViewportRef.current;
+    if (!active || readiness.ready) return;
+    const saved = savedViewportRef.current;
+    if (saved && !saved.followEnd) {
+      const geometry = scrollGeometryRef.current;
+      list.current?.scrollToOffset({
+        offset: restoredOffset(saved, Math.max(0, geometry.contentHeight - geometry.viewportHeight)),
+        animated: false,
+      });
+    } else {
+      list.current?.scrollToEnd({ animated: false });
+    }
+    readiness.ready = true;
+    setViewportReady(true);
+    recordInitialViewportReadiness('reveal-fallback');
+    recordAgentChatDiagnostic('viewport-ready', {
+      latestBlockId: latestBlockIdRef.current,
+      source: 'reveal-fallback',
+      turnCount: turns.length,
+    });
+    initialViewportReadyCallbackRef.current?.();
+  });
+
+  useEffect(() => {
+    if (!active || viewportReady) return;
+    const timer = setTimeout(revealStalledViewport, CHAT_VIEWPORT_REVEAL_FALLBACK_MS);
+    return () => clearTimeout(timer);
+  }, [active, viewportReady]);
 
   useEffect(() => {
     recordAgentChatDiagnostic('viewport-props-changed', {

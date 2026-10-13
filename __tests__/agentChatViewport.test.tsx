@@ -22,7 +22,7 @@ import {
   type TranscriptToolPart,
   type TranscriptTurn,
 } from '../src/agentChat';
-import { AgentChatView } from '../src/components/AgentChatView';
+import { AgentChatView, CHAT_VIEWPORT_REVEAL_FALLBACK_MS } from '../src/components/AgentChatView';
 import type { ChatBlock } from '../src/lib/agentChatBlocks';
 import type { ChatViewportState } from '../src/lib/chatViewportState';
 import type { ChatSearchDocument, ChatSearchResults } from 'react-native-whip-ssh/src/chatSearch';
@@ -1203,6 +1203,30 @@ describe('AgentChatView warm viewport restoration', () => {
     act(() => { flatList(renderer).props.onScroll(scrollEvent(600, 1_000)); });
     expect(onReady).toHaveBeenCalledTimes(1);
     expect(latestButtons()).toHaveLength(0);
+  });
+
+  test('reveals after a fallback when the list never reports its clamped position', () => {
+    jest.useFakeTimers();
+    try {
+      userScrollTo(560);
+      update(false);
+      update(true);
+      // The viewport shrinks (an attachment row appears) and the native list
+      // clamps its offset without a scroll event.
+      act(() => {
+        flatList(renderer).props.onLayout({ nativeEvent: { layout: { height: 300 } } });
+      });
+      expect(onReady).not.toHaveBeenCalled();
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+      act(() => { jest.advanceTimersByTime(CHAT_VIEWPORT_REVEAL_FALLBACK_MS - 1); });
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+      act(() => { jest.advanceTimersByTime(1); });
+      expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+      expect(onReady).toHaveBeenCalledTimes(1);
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('hidden messages preserve a manual position and Latest remains available', () => {

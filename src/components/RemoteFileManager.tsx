@@ -7,6 +7,7 @@ import { ActivityIndicator, Alert, AppState, FlatList, Modal, PanResponder, Pres
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
+import i18next from 'i18next';
 
 import { breadcrumbSegments, formatRemoteFileSize, isRemoteHiddenPath, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
@@ -169,7 +170,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
             if (persistedGitMode) changes = await client.native.gitStatus(repository.root);
           }
         } catch (reason) {
-          if (persistedGitMode) setGitError(String(reason));
+          if (persistedGitMode) setGitError(fileErrorMessage(reason));
         }
         if (request !== requestRef.current) return;
         pathRef.current = listing.path;
@@ -181,7 +182,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         setGitCollapsedPaths(new Set(collapsedPaths));
         onPathChangeRef.current(listing.path);
       } catch (reason) {
-        if (request === requestRef.current) setError(String(reason));
+        if (request === requestRef.current) setError(fileErrorMessage(reason));
       } finally {
         if (request === requestRef.current) setBusy(false);
       }
@@ -272,7 +273,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         }
       }
     } catch (reason) {
-      if (request === gitRequestRef.current) setGitError(String(reason));
+      if (request === gitRequestRef.current) setGitError(fileErrorMessage(reason));
     } finally {
       if (request === gitRequestRef.current) setGitBusy(false);
     }
@@ -297,7 +298,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         setGitStatus([]);
       }
     } catch (reason) {
-      if (request === gitRequestRef.current) setGitError(String(reason));
+      if (request === gitRequestRef.current) setGitError(fileErrorMessage(reason));
     } finally {
       if (request === gitRequestRef.current) setGitBusy(false);
     }
@@ -350,7 +351,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (request === requestRef.current) replacePreview({ ...loadingPreview, gitDiff, reviewState });
     } catch (reason) {
       if (request === requestRef.current) {
-        replacePreview({ ...loadingPreview, error: String(reason) });
+        replacePreview({ ...loadingPreview, error: fileErrorMessage(reason) });
       }
     }
   };
@@ -421,7 +422,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       if (htmlPreview) bestEffortCleanup(client.native.stopPreview(htmlPreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       if (filePreview) bestEffortCleanup(client.native.stopPreview(filePreview.id), REMOTE_PREVIEW_CLOSE_CONTEXT);
       if (request === requestRef.current) {
-        replacePreview({ ...loadingPreview, error: String(reason) });
+        replacePreview({ ...loadingPreview, error: fileErrorMessage(reason) });
       }
     }
   };
@@ -451,7 +452,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
     setBusy(true);
     setError(null);
     openInitialFile(initialFilePath, initialLine).catch(reason => {
-      if (active) setError(String(reason));
+      if (active) setError(fileErrorMessage(reason));
     }).finally(() => {
       if (active) setBusy(false);
     });
@@ -500,7 +501,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       });
       Alert.alert(t('files.savedTitle'), t('files.savedCopy', { name: remoteEntryName(current.entry) }));
     } catch (reason) {
-      Alert.alert(t('files.saveFailed'), String(reason));
+      Alert.alert(t('files.saveFailed'), fileErrorMessage(reason));
     } finally {
       setActionBusy(false);
     }
@@ -526,7 +527,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         }),
       );
     } catch (reason) {
-      if (!isPickerCancellation(reason)) Alert.alert(t('files.downloadFailed'), String(reason));
+      if (!isPickerCancellation(reason)) Alert.alert(t('files.downloadFailed'), fileErrorMessage(reason));
     } finally {
       if (temporary) cached?.dispose();
       setActionBusy(false);
@@ -544,7 +545,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       await loadDirectory(path);
       Alert.alert(t('files.uploadedTitle'), t('files.uploadedCopy', { name: uploadedName }));
     } catch (reason) {
-      Alert.alert(t('files.uploadFailed'), String(reason));
+      Alert.alert(t('files.uploadFailed'), fileErrorMessage(reason));
     } finally {
       picked?.dispose();
       setActionBusy(false);
@@ -561,7 +562,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
         setEntries(current => current.filter(candidate => remoteEntryName(candidate) !== name));
       }
     } catch (reason) {
-      Alert.alert(t('files.deleteFailed', { name }), String(reason));
+      Alert.alert(t('files.deleteFailed', { name }), fileErrorMessage(reason));
     } finally {
       setDeletingPath(null);
     }
@@ -691,7 +692,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                     : () => {
                         openRemotePath(preview.path).catch(reason => {
                           if (previewRef.current === preview) {
-                            updatePreview({ error: String(reason) });
+                            updatePreview({ error: fileErrorMessage(reason) });
                           }
                         });
                       }
@@ -725,7 +726,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   variant="secondary"
                   onPress={hapticPress(() => {
                     openPdfBrowser(preview.filePreview!.url, requestRef.current).catch(reason => {
-                      Alert.alert(t('files.openFailed'), String(reason));
+                      Alert.alert(t('files.openFailed'), fileErrorMessage(reason));
                     });
                   })}
                 >
@@ -1072,7 +1073,7 @@ function FileErrorState({ title, error, onRetry }: { title: string; error: strin
   return (
     <View className="flex-1 items-center justify-center p-8">
       <Text className="text-center text-[14px] font-semibold text-destructive">{title}</Text>
-      <Text className="mt-2 text-center text-[9px] leading-[14px] text-muted-foreground">{error}</Text>
+      <Text className="mt-2 max-w-[300px] text-center text-[13px] leading-[18px] text-text3">{error}</Text>
       <Button className="mt-5 rounded-full" variant="secondary" onPress={hapticPress(onRetry)}>
         <RefreshCw size={16} color={colors.text} />
         <Text>{t('files.retry')}</Text>
@@ -1174,6 +1175,12 @@ function remoteGitStatusColor(status: RemoteGitStatusEntry, colors: ThemeColors)
   if (label.includes('A')) return colors.working;
   if (label.includes('R') || label.includes('C')) return colors.primary;
   return colors.warning;
+}
+
+/** The native message, with a plain sentence for paths that do not exist. */
+function fileErrorMessage(reason: unknown): string {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  return /no such file/i.test(message) ? i18next.t('files.notFound') : message;
 }
 
 function isPickerCancellation(reason: unknown): boolean {

@@ -1353,6 +1353,12 @@ function hostRuntimeError(error: unknown): HostRuntimeBridgeError {
   return result;
 }
 
+function bridgeHostRuntimeError<T>(operation: Promise<T>): Promise<T> {
+  return operation.catch((error: unknown) => {
+    throw hostRuntimeError(error);
+  });
+}
+
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -3313,31 +3319,33 @@ export class NativeHostRuntime {
     return runtimeHostLatency(await this.runtime.measureHostLatency());
   }
 
+  // Remote file calls surface the native message (for example SFTP's
+  // "No such file") instead of the bare error variant name.
   async listDirectory(path?: string): Promise<RuntimeRemoteDirectoryListing> {
-    return runtimeDirectory(await this.runtime.listDirectory(path));
+    return runtimeDirectory(await bridgeHostRuntimeError(this.runtime.listDirectory(path)));
   }
 
   async statRemotePath(path: string): Promise<RuntimeRemoteFileEntry> {
-    return runtimeRemoteEntry(await this.runtime.statRemotePath(path));
+    return runtimeRemoteEntry(await bridgeHostRuntimeError(this.runtime.statRemotePath(path)));
   }
 
   readRemoteText(path: string, maxBytes?: number): Promise<string> {
-    return this.runtime.readRemoteText(
+    return bridgeHostRuntimeError(this.runtime.readRemoteText(
       path,
       maxBytes === undefined ? undefined : BigInt(maxBytes),
-    );
+    ));
   }
 
   createRemoteDirectory(path: string): Promise<void> {
-    return this.runtime.createRemoteDirectory(path);
+    return bridgeHostRuntimeError(this.runtime.createRemoteDirectory(path));
   }
 
   renameRemotePath(from: string, to: string): Promise<void> {
-    return this.runtime.renameRemotePath(from, to);
+    return bridgeHostRuntimeError(this.runtime.renameRemotePath(from, to));
   }
 
   removeRemotePath(path: string, directory: boolean): Promise<void> {
-    return this.runtime.removeRemotePath(path, directory);
+    return bridgeHostRuntimeError(this.runtime.removeRemotePath(path, directory));
   }
 
   private transfer(id: string): RuntimeTransfer {

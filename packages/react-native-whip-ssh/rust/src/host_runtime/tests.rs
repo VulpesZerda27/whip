@@ -1105,37 +1105,71 @@ fn rust_interprets_direct_agent_commands_without_consuming_shell_syntax() {
 
 #[test]
 fn pane_submission_sequence_is_one_semantic_native_operation() {
-    let requests = pane_submission_requests(
+    let steps = pane_submission_requests(
         "pane-1".to_owned(),
         vec![
             "review".to_owned(),
             String::new(),
-            "/tmp/image.png".to_owned(),
+            "/home/kosumi/.whip/uploads/image.png".to_owned(),
         ],
     );
-    assert_eq!(requests.len(), 3);
+    assert_eq!(steps.len(), 5);
     assert!(matches!(
-        &requests[0],
-        (
-            HerdrControlRequest::PaneSendInput { text, keys, .. },
-            true
-        ) if text == "review" && keys.is_empty()
+        &steps[0],
+        PaneSubmissionStep::Request(HerdrControlRequest::PaneSendInput { text, keys, .. }, true)
+            if text == "review" && keys.is_empty()
     ));
     assert!(matches!(
-        &requests[1],
-        (HerdrControlRequest::PaneSendText { text, .. }, false) if text == " "
+        &steps[1],
+        PaneSubmissionStep::Request(HerdrControlRequest::PaneSendText { text, .. }, false)
+            if text == " "
+    ));
+    // The attachment paste must not carry Enter: the agent converts the path
+    // into an image only after its paste debounce.
+    assert!(matches!(
+        &steps[2],
+        PaneSubmissionStep::Request(HerdrControlRequest::PaneSendInput { text, keys, .. }, true)
+            if text == "/home/kosumi/.whip/uploads/image.png" && keys.is_empty()
     ));
     assert!(matches!(
-        &requests[2],
-        (
-            HerdrControlRequest::PaneSendInput { text, keys, .. },
-            true
-        ) if text == "/tmp/image.png" && keys == &["enter"]
+        &steps[3],
+        PaneSubmissionStep::Settle(pause) if *pause == ATTACHMENT_SUBMIT_SETTLE
+    ));
+    assert!(matches!(
+        &steps[4],
+        PaneSubmissionStep::Request(HerdrControlRequest::PaneSendKeys { keys, .. }, false)
+            if keys == &["enter"]
     ));
 
     assert!(matches!(
         pane_submission_requests("pane-1".to_owned(), Vec::new()).as_slice(),
-        [(HerdrControlRequest::PaneSendKeys { keys, .. }, false)] if keys == &["enter"]
+        [PaneSubmissionStep::Request(HerdrControlRequest::PaneSendKeys { keys, .. }, false)]
+            if keys == &["enter"]
+    ));
+}
+
+#[test]
+fn pane_submission_sends_plain_text_and_enter_together() {
+    assert!(matches!(
+        pane_submission_requests("pane-1".to_owned(), vec!["/compact".to_owned()]).as_slice(),
+        [PaneSubmissionStep::Request(HerdrControlRequest::PaneSendInput { text, keys, .. }, true)]
+            if text == "/compact" && keys == &["enter"]
+    ));
+}
+
+#[test]
+fn pane_submission_settles_before_submitting_a_lone_attachment() {
+    let steps = pane_submission_requests(
+        "pane-1".to_owned(),
+        vec!["/home/kosumi/.whip/uploads/photo.jpg".to_owned()],
+    );
+    assert!(matches!(
+        steps.as_slice(),
+        [
+            PaneSubmissionStep::Request(HerdrControlRequest::PaneSendInput { keys, .. }, true),
+            PaneSubmissionStep::Settle(_),
+            PaneSubmissionStep::Request(HerdrControlRequest::PaneSendKeys { .. }, false),
+        ] if keys.is_empty()
     ));
 }
 

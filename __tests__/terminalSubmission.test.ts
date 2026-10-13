@@ -1,5 +1,7 @@
 import {
+  ATTACHMENT_SUBMIT_SETTLE_MS,
   composeTerminalSubmission,
+  terminalSubmissionSettleMs,
   terminalSubmissionWrites,
 } from '../src/lib/terminalSubmission';
 
@@ -53,5 +55,15 @@ describe('terminal composer submission', () => {
   test('submits an empty composer as Enter only', () => {
     expect(composeTerminalSubmission('   ', [])).toEqual({ historyEntry: '', pasteEvents: [] });
     expect(terminalSubmissionWrites([])).toEqual(['\r']);
+  });
+
+  test('pauses before Enter only when attachments follow the text', () => {
+    expect(terminalSubmissionSettleMs(['please inspect'])).toBe(0);
+    expect(terminalSubmissionSettleMs(['/compact'])).toBe(0);
+    expect(terminalSubmissionSettleMs([])).toBe(0);
+    expect(terminalSubmissionSettleMs(['please inspect', '/remote/one.png'])).toBe(ATTACHMENT_SUBMIT_SETTLE_MS);
+    expect(terminalSubmissionSettleMs([
+      '\u001b[200~/home/kosumi/.whip/uploads/photo.jpg\u001b[201~',
+    ])).toBe(ATTACHMENT_SUBMIT_SETTLE_MS);
   });
 });

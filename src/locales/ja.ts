@@ -890,6 +890,7 @@ export const ja = {
   'files.sort.descending': '降順',
   'files.loading': 'リモート ディレクトリをロードしています…',
   'files.listFailed': 'このディレクトリを開けませんでした',
+  'files.notFound': 'このパスはサーバー上に存在しません。',
   'files.retry': 'もう一度試してください',
   'files.empty': 'このディレクトリは空です',
   'files.directory': 'ディレクトリ',

@@ -37,7 +37,7 @@ import {
   resumedTerminalScrollOffset,
   type TerminalResumeViewport,
 } from '../lib/terminalScroll';
-import { terminalSubmissionWrites } from '../lib/terminalSubmission';
+import { terminalSubmissionSettleMs, terminalSubmissionWrites } from '../lib/terminalSubmission';
 import { isUnknownRecord, stringArray } from '../lib/unknown';
 import {
   terminalRendererEvictionKeys,
@@ -1427,7 +1427,12 @@ export const TerminalRendererHost = forwardRef<TerminalRendererHandle, Props>(fu
             );
             return;
           }
-          for (const [index, data] of terminalSubmissionWrites(pastedParts).entries()) {
+          const writes = terminalSubmissionWrites(pastedParts);
+          const settleMs = terminalSubmissionSettleMs(pastedParts);
+          for (const [index, data] of writes.entries()) {
+            if (settleMs > 0 && index === writes.length - 1) {
+              await new Promise(resolve => setTimeout(resolve, settleMs));
+            }
             if (index === 0) {
               await withTerminalWriteTrace(
                 inputTrace,

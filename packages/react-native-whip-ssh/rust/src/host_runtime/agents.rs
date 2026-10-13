@@ -355,16 +355,38 @@ where
     }
 }
 
+/// Agents such as Claude Code turn a pasted file path into an attachment after
+/// a short paste debounce (about 100 ms). An Enter that arrives in the same
+/// burst submits the text without the image and leaves `[Image #N]` behind in
+/// the agent's input, so submissions with attachments send Enter separately
+/// after this pause.
+pub(super) const ATTACHMENT_SUBMIT_SETTLE: Duration = Duration::from_millis(400);
+
+/// Where `start_attachment_upload` places files on the host.
+const ATTACHMENT_UPLOAD_DIRECTORY: &str = "/.whip/uploads/";
+
+#[derive(Debug)]
+pub(super) enum PaneSubmissionStep {
+    /// A Herdr request; `true` when it completes one caller-supplied part.
+    Request(HerdrControlRequest, bool),
+    /// Let the agent finish processing the pastes before the next request.
+    Settle(Duration),
+}
+
+fn is_uploaded_attachment(part: &str) -> bool {
+    part.starts_with('/') && !part.contains('\n') && part.contains(ATTACHMENT_UPLOAD_DIRECTORY)
+}
+
 pub(super) fn pane_submission_requests(
     pane_id: String,
     parts: Vec<String>,
-) -> Vec<(HerdrControlRequest, bool)> {
+) -> Vec<PaneSubmissionStep> {
     let parts = parts
         .into_iter()
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>();
     if parts.is_empty() {
-        return vec![(
+        return vec![PaneSubmissionStep::Request(
             HerdrControlRequest::PaneSendKeys {
                 pane_id,
                 keys: vec!["enter".to_owned()],
@@ -373,11 +395,13 @@ pub(super) fn pane_submission_requests(
         )];
     }
 
+    // Composer text comes first; any further part is an attachment path.
+    let has_attachments = parts.len() > 1 || is_uploaded_attachment(&parts[0]);
     let part_count = parts.len();
-    let mut requests = Vec::with_capacity(part_count.saturating_mul(2).saturating_sub(1));
+    let mut steps = Vec::with_capacity(part_count.saturating_mul(2).saturating_add(1));
     for (index, text) in parts.into_iter().enumerate() {
         if index > 0 {
-            requests.push((
+            steps.push(PaneSubmissionStep::Request(
                 HerdrControlRequest::PaneSendText {
                     pane_id: pane_id.clone(),
                     text: " ".to_owned(),
@@ -385,11 +409,12 @@ pub(super) fn pane_submission_requests(
                 false,
             ));
         }
-        requests.push((
+        let submits = index + 1 == part_count && !has_attachments;
+        steps.push(PaneSubmissionStep::Request(
             HerdrControlRequest::PaneSendInput {
                 pane_id: pane_id.clone(),
                 text,
-                keys: if index + 1 == part_count {
+                keys: if submits {
                     vec!["enter".to_owned()]
                 } else {
                     Vec::new()
@@ -398,7 +423,17 @@ pub(super) fn pane_submission_requests(
             true,
         ));
     }
-    requests
+    if has_attachments {
+        steps.push(PaneSubmissionStep::Settle(ATTACHMENT_SUBMIT_SETTLE));
+        steps.push(PaneSubmissionStep::Request(
+            HerdrControlRequest::PaneSendKeys {
+                pane_id,
+                keys: vec!["enter".to_owned()],
+            },
+            false,
+        ));
+    }
+    steps
 }
 
 pub(super) async fn submit_pastes_inner(
@@ -407,7 +442,14 @@ pub(super) async fn submit_pastes_inner(
     parts: Vec<String>,
 ) -> Result<(), HostRuntimeError> {
     let mut submitted_parts = 0_u32;
-    for (request, completes_part) in pane_submission_requests(pane_id, parts) {
+    for step in pane_submission_requests(pane_id, parts) {
+        let (request, completes_part) = match step {
+            PaneSubmissionStep::Request(request, completes_part) => (request, completes_part),
+            PaneSubmissionStep::Settle(pause) => {
+                tokio::time::sleep(pause).await;
+                continue;
+            }
+        };
         control_request_inner(inner.clone(), request)
             .await
             .map_err(|error| HostRuntimeError::PaneSubmissionFailure {

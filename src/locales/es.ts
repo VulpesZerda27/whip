@@ -890,6 +890,7 @@ export const es = {
   'files.sort.descending': 'Descendente',
   'files.loading': 'Cargando directorio remoto…',
   'files.listFailed': 'No se pudo abrir este directorio',
+  'files.notFound': 'Esta ruta no existe en el servidor.',
   'files.retry': 'Inténtalo de nuevo',
   'files.empty': 'Este directorio está vacío',
   'files.directory': 'Directorio',

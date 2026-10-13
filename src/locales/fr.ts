@@ -910,6 +910,7 @@ export const fr = {
   'files.sort.descending': 'Décroissant',
   'files.loading': 'Chargement du répertoire distant…',
   'files.listFailed': 'Impossible d’ouvrir ce répertoire',
+  'files.notFound': 'Ce chemin n’existe pas sur le serveur.',
   'files.retry': 'Réessayer',
   'files.empty': 'Ce répertoire est vide',
   'files.directory': 'Répertoire',

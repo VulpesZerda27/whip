@@ -907,6 +907,7 @@ export const en = {
   'files.sort.descending': 'Descending',
   'files.loading': 'Loading remote directory…',
   'files.listFailed': 'Could not open this directory',
+  'files.notFound': 'This path doesn’t exist on the server.',
   'files.retry': 'Try again',
   'files.empty': 'This directory is empty',
   'files.directory': 'Directory',

@@ -890,6 +890,7 @@ export const zhHans = {
   'files.sort.descending': '降序',
   'files.loading': '正在加载远程目录...',
   'files.listFailed': '无法打开此目录',
+  'files.notFound': '服务器上不存在此路径。',
   'files.retry': '再试一次',
   'files.empty': '该目录为空',
   'files.directory': '目录',
