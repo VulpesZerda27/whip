@@ -52,6 +52,9 @@ jest.mock('../src/theme', () => ({
       done: '#1a7f37',
       warning: '#9a6700',
       error: '#cf222e',
+      raised: '#eaeef2',
+      sunken: '#f6f8fa',
+      magenta: '#8250df',
     },
   }),
 }));
@@ -175,7 +178,7 @@ A["<b>Start</b>"] --> B["\(value\)"]`;
     expect(props.markdown).toBe(`${fence}bash\n${content}\n${fence}`);
     expect(props).toMatchObject({ flavor: 'github', searchQuery: 'git', selectable: true, allowTrailingMargin: false });
     expect(props.markdownStyle.codeBlock).toMatchObject({
-      fontFamily: 'Mono', fontSize: 11, lineHeight: 17, marginTop: 0, marginBottom: 0,
+      fontFamily: 'Mono', fontSize: 11.5, lineHeight: 19, marginTop: 0, marginBottom: 0,
       syntaxColors: { function: '#0969da', constant: '#9a6700' },
     });
   });
@@ -213,7 +216,7 @@ A["<b>Start</b>"] --> B["\(value\)"]`;
     }));
     expect(props.markdownStyle.code.fontFamily).toBe('Mono');
     expect(props.markdownStyle.codeBlock.syntaxColors).toEqual(
-      expect.objectContaining({ keyword: '#0969da', string: '#1a7f37' }),
+      expect.objectContaining({ keyword: '#8250df', string: '#1a7f37' }),
     );
     expect(props.markdownStyle.taskList.checkedStrikethrough).toBe(true);
     expect(props.markdownStyle.highlight).toEqual({

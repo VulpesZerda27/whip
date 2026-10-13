@@ -185,3 +185,16 @@ export function formatRemoteFileSize(bytes: number): string {
   }
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${units[unit]}`;
 }
+
+/** Path segments for the breadcrumb: the home folder reads `~/`, each later folder is tappable. */
+export function breadcrumbSegments(path: string): { label: string; path: string }[] {
+  const home = /^\/(?:home|Users)\/[^/]+|^\/root(?=\/|$)/.exec(path)?.[0];
+  const rest = (home ? path.slice(home.length) : path).split('/').filter(Boolean);
+  const segments = home ? [{ label: '~/', path: home }] : [];
+  let current = home ?? '';
+  rest.forEach((part, index) => {
+    current = `${current}/${part}`;
+    segments.push({ label: `${!home && index === 0 ? '/' : ''}${part}${index < rest.length - 1 ? '/' : ''}`, path: current });
+  });
+  return segments.length ? segments : [{ label: '/', path: '/' }];
+}

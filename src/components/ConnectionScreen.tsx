@@ -1,8 +1,8 @@
-import { ArrowRight, Check, ChevronDown, ChevronLeft, ClipboardPaste, FileUp, KeyRound, Network, Sparkles, Trash2, X } from 'lucide-react-native';
+import { ArrowRight, ChevronDown, ClipboardPaste, Copy, FileUp, KeyRound, Route, ShieldCheck, Sparkles, Trash2, X } from 'lucide-react-native';
 import { generateKeyPair, getKeyDetails } from 'react-native-whip-ssh';
 import { useEffect, useRef, useState } from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { Alert, Keyboard, KeyboardAvoidingView, Modal, NativeModules, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, NativeModules, Platform, ScrollView, TextInput, View } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,12 +17,12 @@ import {
 } from '@/src/lib/connectionCredentialDrafts';
 import { cn } from '@/src/lib/utils';
 import { copyTextWithHaptic } from '@/src/services/interactionFeedback';
-import { appGlassControlStyle, useTheme } from '@/src/theme';
+import { statusTint, useTheme } from '@/src/theme';
+import { hostValidationCount, validateHostProfile, type HostField, type HostValidation } from '@/src/lib/hostValidation';
 import type { ConnectionProfile, GlobalSshKeyMaterial, HostProfile } from '@/src/types';
-import { hapticPress, IconButton, ScreenHeader, ReinsMark } from './app-ui';
-import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { BackButton, hapticPress, IconButton, ScreenHeader } from './app-ui';
+import { ActionButton, BottomSheet, IconTile, ListGroup, ListRow, RadioMark, SegmentedControl, useToast } from './nightfall';
 import { Button } from './ui/button';
-import { Icon } from './ui/icon';
 import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Text } from './ui/text';
@@ -64,8 +64,10 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   const { inset: keyboardInset } = useKeyboardInset(keyboardViewportRef, {
     enabled: Platform.OS === 'android',
   });
-  const appGlassEnabled = useAppGlassEnabled();
+  const toast = useToast();
   const [profile, setProfile] = useState(initialProfile);
+  const [attempted, setAttempted] = useState(false);
+  const [validation, setValidation] = useState<HostValidation>({});
   const [credentialDrafts, setCredentialDrafts] = useState(() => (
     credentialDraftsForProfile(initialProfile)
   ));
@@ -102,6 +104,8 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     setCredentialDrafts(credentialDraftsForProfile(initialProfile));
     setKeyActionsOpen(false);
     setJumpHostPickerOpen(false);
+    setAttempted(false);
+    setValidation({});
   }, [initialProfile]);
 
   useEffect(() => {
@@ -145,8 +149,6 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   }, [profile.authMode, profile.passphrase, profile.secret, t]);
 
   const update = <K extends keyof ConnectionProfile>(key: K, value: ConnectionProfile[K]) => setProfile(current => ({ ...current, [key]: value }));
-  const canSave = Boolean(profile.host.trim() && profile.username.trim());
-  const canConnect = Boolean(canSave && profile.secret);
   const jumpHosts = jumpHostCandidates(hosts, profile.id);
   const selectedJumpHost = hosts.find(host => host.id === profile.jumpHostId);
   const privateKeyAccessibilityLabel = keyInspection.state === 'valid'
@@ -252,6 +254,22 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
     }
   };
 
+  const submit = (intent: 'save' | 'connect') => {
+    const errors = validateHostProfile(profile, intent);
+    setAttempted(true);
+    setValidation(errors);
+    const count = hostValidationCount(errors);
+    if (count > 0) {
+      toast.show({ message: t('connection.validation.summary', { count }), tone: 'bad' });
+      return;
+    }
+    if (intent === 'save') onSave(profile);
+    else onConnect(profile);
+  };
+  // After the first failed attempt, validation follows every edit.
+  const liveValidation = attempted ? validateHostProfile(profile, validation.secret ? 'connect' : 'save') : {};
+  const fieldError = (field: HostField) => (attempted ? liveValidation[field] : undefined);
+
   return (
     <View ref={keyboardViewportRef} collapsable={false} className="flex-1">
     <KeyboardAvoidingView
@@ -259,7 +277,7 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
       keyboardVerticalOffset={keyboardVerticalOffset}
       style={Platform.OS === 'android' ? { paddingBottom: keyboardInset } : undefined}
       className="flex-1">
-      <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<IconButton icon={ChevronLeft} accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
+      <ScreenHeader title={profile.name.trim() ? t('connection.editHost') : t('connection.newHost')} left={<BackButton accessibilityLabel={t('connection.back')} onPress={onCancel} />} />
       <ScrollView
         ref={scrollRef}
         className="flex-1"
@@ -267,67 +285,84 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
         onFocus={revealFocusedField}
         onLayout={revealFocusedField}
         onScroll={event => { scrollOffset.current = event.nativeEvent.contentOffset.y; }}
-        scrollEventThrottle={16}><View className="p-4 pb-11">
-        <View className="mb-[30px] flex-row items-center gap-3.5"><ReinsMark size={48} /><View className="flex-1"><Text className="text-lg font-semibold leading-6">{t('connection.title')}</Text><Text className="mt-0.5 text-[13px] leading-[19px] text-muted-foreground">{t('connection.intro')}</Text></View></View>
-
-        <GlassSurface className="rounded-lg border border-white/30 p-4 dark:border-white/10">
-        <Text className="mb-3 px-1 text-sm font-semibold text-muted-foreground">{t('connection.hostIdentity')}</Text>
-        <Field label={t('connection.displayName')} value={profile.name} placeholder={profile.host.trim() || 'Savior'} onChangeText={value => update('name', value)} />
-
-        <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.sshDestination')}</Text>
-        <View className="flex-row gap-2.5"><Field label={t('connection.hostOrIp')} value={profile.host} placeholder="server.example.com" onChangeText={value => update('host', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.port')} value={profile.port} onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-[88px]" /></View>
-        <Field label={t('connection.sshUser')} value={profile.username} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" />
+        scrollEventThrottle={16}><View className="px-4 pb-8">
+        <SectionTitle first>{t('connection.sshDestination')}</SectionTitle>
+        <Field label={t('connection.displayName')} value={profile.name} placeholder={profile.host.trim() || 'master161'} onChangeText={value => update('name', value)} />
+        <View className="flex-row gap-2.5">
+          <Field mono label={t('connection.hostOrIp')} value={profile.host} placeholder="192.168.10.7" onChangeText={value => update('host', value)} className="flex-1" autoCapitalize="none" autoCorrect={false} error={fieldError('host') && t(fieldError('host')!)} />
+          <Field mono label={t('connection.port')} value={profile.port} placeholder="22" onChangeText={value => update('port', value)} keyboardType="number-pad" className="w-24" invalid={Boolean(fieldError('port'))} />
+        </View>
+        {fieldError('port') ? <FieldError message={t(fieldError('port')!)} /> : null}
+        <Field mono label={t('connection.sshUser')} value={profile.username} placeholder="kosumi" onChangeText={value => update('username', value)} autoCapitalize="none" autoCorrect={false} error={fieldError('username') && t(fieldError('username')!)} />
         <JumpHostField
           jumpHost={selectedJumpHost}
           onPress={() => setJumpHostPickerOpen(true)}
         />
 
-        <View
-          className={cn('mb-4 flex-row rounded-full p-1', appGlassEnabled ? 'border' : 'bg-muted')}
-          style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}>
-          {(['password', 'key'] as const).map(mode => {
-            const selected = profile.authMode === mode;
-            return (
-              <Button
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
-                className={cn(
-                  'h-[38px] flex-1 rounded-full',
-                  !appGlassEnabled && selected && 'bg-background',
-                  appGlassEnabled && selected && 'border',
-                )}
-                key={mode}
-                style={appGlassEnabled && selected ? appGlassControlStyle(true, colors) : undefined}
-                variant="ghost"
-                onPress={hapticPress(() => setAuthMode(mode))}>
-                <Text className={cn(
-                  'text-[13px] font-semibold',
-                  !selected && 'text-muted-foreground',
-                  appGlassEnabled && selected && 'text-primary',
-                )}>
-                  {mode === 'password' ? t('hosts.password') : t('connection.privateKey')}
-                </Text>
-              </Button>
-            );
-          })}
-        </View>
+        <SectionTitle>{t('connection.signInWith')}</SectionTitle>
+        <SegmentedControl
+          accessibilityLabel={t('connection.signInWith')}
+          size="lg"
+          options={[
+            { value: 'password' as const, label: t('hosts.password') },
+            { value: 'key' as const, label: t('connection.privateKey') },
+          ]}
+          value={profile.authMode}
+          onChange={setAuthMode}
+        />
+        <View className="mt-3" />
 
         {profile.authMode === 'password' ? (
           <Field label={t('connection.sshPassword')} value={profile.secret} onChangeText={value => {
             const next = updateActiveCredential(profile, credentialDrafts, value);
             setProfile(next.profile);
             setCredentialDrafts(next.drafts);
-          }} secureTextEntry autoCapitalize="none" />
+          }} secureTextEntry autoCapitalize="none" error={fieldError('secret') && t(fieldError('secret')!)} />
+        ) : profile.secret ? (
+          <View className="mb-3.5 flex-row items-center gap-3 rounded-2xl bg-card py-2.5 pl-3.5 pr-1.5">
+            <Button
+              accessibilityLabel={privateKeyAccessibilityLabel}
+              className="min-w-0 flex-1 flex-row items-center justify-start gap-3 rounded-none px-0"
+              size="content"
+              variant="ghost"
+              onPress={hapticPress(() => setKeyActionsOpen(true))}>
+              <IconTile icon={KeyRound} size={38} radius={12} color={colors.done} background={statusTint(colors.done, 0.14)} />
+              <View className="min-w-0 flex-1">
+                <Text className="text-[14.5px] font-semibold" numberOfLines={1}>
+                  {keyInspection.state === 'valid'
+                    ? t('connection.keyReady', { keyType: keyInspection.keyType.replace(/^ssh-/, '').toUpperCase() })
+                    : t('connection.privateKeyLoaded')}
+                </Text>
+                {keyInspection.state === 'valid' ? (
+                  <Text className="mt-0.5 font-mono text-[11.5px] text-text3" ellipsizeMode="middle" numberOfLines={1}>
+                    {keyInspection.fingerprint}
+                  </Text>
+                ) : null}
+              </View>
+            </Button>
+            <IconButton icon={Copy} iconSize={18} accessibilityLabel={t('connection.copyPublic')} onPress={copyPublicKey} />
+            <IconButton icon={X} iconSize={18} accessibilityLabel={t('connection.removePrivateKey')} onPress={removePrivateKey} />
+          </View>
         ) : (
-          <View className="mb-3.5"><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.privateKeyFormat')}</Text><View className={cn('min-h-[58px] w-full flex-row overflow-hidden rounded-md border border-border', !appGlassEnabled && 'bg-card')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}><Button accessibilityLabel={profile.secret ? privateKeyAccessibilityLabel : t('connection.addPrivateKey')} className="min-h-[58px] min-w-0 flex-1 justify-start rounded-none px-3.5 py-2.5" disabled={generatingKey} size="content" variant="ghost" onPress={hapticPress(() => setKeyActionsOpen(true))}><Icon as={KeyRound} size={18} />{profile.secret ? (keyInspection.state === 'valid' ? <KeyIdentity fingerprint={keyInspection.fingerprint} keyType={keyInspection.keyType} /> : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{t('connection.privateKeyLoaded')}</Text>) : <Text className="min-w-0 flex-1 text-[13px] font-medium" numberOfLines={1}>{generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}</Text>}</Button>{profile.secret ? <Button accessibilityLabel={t('connection.removePrivateKey')} className="min-h-[58px] w-[52px] rounded-none border-l border-border px-0 py-0" size="content" variant="ghost" onPress={hapticPress(removePrivateKey)}><Icon as={X} className="text-muted-foreground" size={19} /></Button> : null}</View></View>
+          <>
+            <PickerRow
+              accessibilityLabel={t('connection.addPrivateKey')}
+              icon={KeyRound}
+              invalid={Boolean(fieldError('secret'))}
+              label={generatingKey ? t('connection.generatingKey') : t('connection.addPrivateKey')}
+              description={t('connection.addPrivateKeyCopy')}
+              disabled={generatingKey}
+              onPress={() => setKeyActionsOpen(true)}
+            />
+            {fieldError('secret') ? <FieldError message={t(fieldError('secret')!)} /> : null}
+          </>
         )}
         {profile.authMode === 'key' && keyInspection.state !== 'idle' && keyInspection.state !== 'valid' ? (
             <Text
               accessibilityLiveRegion="polite"
               className={cn(
-                '-mt-2 mb-3.5 px-1 text-xs leading-[17px]',
-                keyInspection.state === 'invalid' && 'text-destructive',
-                (keyInspection.state === 'loading' || keyInspection.state === 'passphrase-required') && 'text-muted-foreground',
+                '-mt-1.5 mb-3.5 px-1 text-[12.5px] leading-[17px]',
+                keyInspection.state === 'invalid' ? 'text-blocked' : 'text-text3',
               )}>
               {keyInspection.state === 'loading' && t('connection.inspectingKey')}
               {keyInspection.state === 'passphrase-required' && t('connection.passphraseRequired')}
@@ -340,50 +375,59 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
           setCredentialDrafts(next.drafts);
         }} secureTextEntry /> : null}
 
-        <View className="mb-3.5 mt-0.5 min-h-[82px] flex-row items-center gap-4 border-y border-border">
+        <View className={cn('flex-row items-center gap-4 rounded-2xl bg-card py-3.5 pl-4 pr-3.5', profile.authMode !== 'key' && 'opacity-60')}>
           <View className="flex-1">
-            <Text className="text-[15px] font-semibold leading-5">{t('connection.agentForwarding')}</Text>
-            <Text className="mt-0.5 text-xs leading-[17px] text-muted-foreground">
+            <Text className="text-[15.5px] font-medium leading-5">{t('connection.agentForwarding')}</Text>
+            <Text className="mt-1 text-[12.5px] leading-[17px] text-text3">
               {profile.authMode === 'key'
                 ? t('connection.agentForwardingCopy')
                 : t('connection.agentForwardingKeyRequired')}
             </Text>
           </View>
           <Switch
+            accessibilityLabel={t('connection.agentForwarding')}
             checked={Boolean(profile.forwardAgent)}
             disabled={profile.authMode !== 'key'}
             onCheckedChange={value => update('forwardAgent', value)}
           />
         </View>
 
-        <Text className="mb-3 mt-3.5 px-1 text-sm font-semibold text-muted-foreground">{t('connection.herdrTarget')}</Text>
-        <View className="flex-row gap-2.5"><Field label={t('connection.command')} value={profile.herdrCommand} onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" /><Field label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="w-[118px]" autoCapitalize="none" /></View>
-        <Field className="mt-2.5" label={t('connection.socket')} value={profile.herdrSocketPath || ''} placeholder="auto (~/.config/herdr/herdr.sock)" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" />
-
-        {error ? <Text className="my-2.5 text-[13px] leading-[18px] text-destructive">{error}</Text> : null}
-        <View className="mt-2 flex-row gap-2.5">
-          <Button
-            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
-            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-            variant={appGlassEnabled ? 'ghost' : 'secondary'}
-            disabled={!canSave || connecting}
-            onPress={hapticPress(() => onSave(profile))}>
-            <Text>{t('connection.saveHost')}</Text>
-          </Button>
-          <Button
-            className={cn('flex-1 rounded-full', appGlassEnabled && 'border')}
-            style={appGlassEnabled ? appGlassControlStyle(true, colors) : undefined}
-            variant={appGlassEnabled ? 'ghost' : 'default'}
-            disabled={!canConnect || connecting}
-            onPress={hapticPress(() => onConnect(profile))}>
-            <Text className={cn(appGlassEnabled && 'text-primary')}>{connecting ? t('connection.openingSsh') : t('common.connect')}</Text>
-            <Icon as={ArrowRight} className={appGlassEnabled ? 'text-primary' : 'text-primary-foreground'} size={17} />
-          </Button>
+        <SectionTitle>{t('connection.herdrTarget')}</SectionTitle>
+        <View className="flex-row gap-2.5">
+          <Field mono label={t('connection.command')} value={profile.herdrCommand} placeholder="herdr" onChangeText={value => update('herdrCommand', value)} className="flex-1" autoCapitalize="none" autoCorrect={false} />
+          <Field mono label={t('connection.session')} value={profile.sessionName} placeholder="default" onChangeText={value => update('sessionName', value)} className="flex-1" autoCapitalize="none" autoCorrect={false} />
         </View>
-        {onDelete ? <Button className="mt-3.5 rounded-full" variant="destructive" onPress={hapticPress(onDelete)}><Icon as={Trash2} className="text-destructive-foreground" size={17} /><Text>{t('connection.deleteHost')}</Text></Button> : null}
-        <Text className="mt-4 text-center text-[11px] leading-4 text-muted-foreground/70">{t('connection.hostKeyWarning')}</Text>
-        </GlassSurface>
+        <Field mono label={t('connection.socketOptional')} value={profile.herdrSocketPath || ''} placeholder="~/.local/state/herdr/api.sock" onChangeText={value => update('herdrSocketPath', value)} autoCapitalize="none" autoCorrect={false} />
+
+        {error ? <Text accessibilityRole="alert" className="my-2.5 px-1 text-[13px] leading-[18px] text-blocked">{error}</Text> : null}
+        {onDelete ? (
+          <ActionButton className="mt-3" height={50} icon={Trash2} label={t('connection.deleteHost')} radius={17} tone="dangerSoft" onPress={onDelete} />
+        ) : null}
+        <View className="mt-4 flex-row items-start gap-2 px-1">
+          <ShieldCheck color={colors.textTertiary} size={14} style={{ marginTop: 2 }} />
+          <Text className="flex-1 text-[12.5px] leading-[18px] text-text3">{t('connection.hostKeyWarning')}</Text>
+        </View>
       </View></ScrollView>
+      <View className="flex-row gap-2.5 px-4 pb-3.5 pt-2">
+        <ActionButton
+          className="flex-1"
+          disabled={connecting}
+          height={54}
+          label={t('connection.saveHost')}
+          radius={19}
+          tone="raised"
+          onPress={() => submit('save')}
+        />
+        <ActionButton
+          className="flex-1"
+          busy={connecting}
+          height={54}
+          icon={ArrowRight}
+          label={connecting ? t('connection.openingSsh') : t('common.connect')}
+          radius={19}
+          onPress={() => submit('connect')}
+        />
+      </View>
       <PrivateKeyActions
         hasKey={Boolean(profile.secret)}
         visible={keyActionsOpen}
@@ -416,42 +460,77 @@ export function ConnectionScreen({ initialProfile, hosts, connecting, error, onC
   );
 }
 
-interface FieldProps extends React.ComponentProps<typeof TextInput> { label: string; className?: string }
-
-function Field({ label, className, multiline, ...props }: FieldProps) {
-  return <View className={cn('mb-3.5', className)}><Text className="mb-1.5 text-xs font-medium text-muted-foreground">{label}</Text><Input {...props} multiline={multiline} className={multiline ? 'min-h-[116px] font-mono text-xs' : undefined} textAlignVertical={multiline ? 'top' : 'center'} /></View>;
+function SectionTitle({ children, first = false }: { children: string; first?: boolean }) {
+  return <Text accessibilityRole="header" className={cn('mb-2.5 px-1 text-[13px] font-semibold text-text2', first ? 'mt-2' : 'mt-7')}>{children}</Text>;
 }
 
-function KeyIdentity({ fingerprint, keyType }: { fingerprint: string; keyType: string }) {
-  return <View className="min-w-0 flex-1 justify-center"><Text className="shrink font-mono text-[12px] leading-[17px]" ellipsizeMode="middle" numberOfLines={1}>{fingerprint}</Text><Text className="text-[11px] font-semibold leading-[17px] text-muted-foreground" numberOfLines={1}>{keyType}</Text></View>;
+function FieldError({ message }: { message: string }) {
+  return <Text accessibilityLiveRegion="polite" className="-mt-2 mb-3 px-1 text-[12.5px] leading-[17px] text-blocked">{message}</Text>;
+}
+
+function PickerRow({ icon: IconComponent, label, description, onPress, accessibilityLabel, disabled, invalid = false, mono = true, highlighted = false }: {
+  icon: typeof KeyRound;
+  label: string;
+  description: string;
+  onPress: () => void;
+  accessibilityLabel: string;
+  disabled?: boolean;
+  invalid?: boolean;
+  mono?: boolean;
+  highlighted?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Button
+      accessibilityLabel={accessibilityLabel}
+      className="mb-3.5 min-h-[58px] flex-row justify-start gap-3 rounded-2xl bg-card px-3.5 py-2 active:bg-raised"
+      disabled={disabled}
+      size="content"
+      style={{ borderWidth: 1.5, borderColor: invalid ? `${colors.blocked}D9` : 'transparent' }}
+      variant="ghost"
+      onPress={hapticPress(onPress)}>
+      <IconComponent color={highlighted ? colors.primary : colors.textSecondary} size={19} />
+      <View className="min-w-0 flex-1">
+        <Text className="text-[15.5px] font-medium" numberOfLines={1}>{label}</Text>
+        <Text className={cn('mt-0.5 text-text3', mono ? 'font-mono text-xs' : 'text-[12.5px]')} numberOfLines={1}>{description}</Text>
+      </View>
+      <ChevronDown color={colors.decor} size={18} />
+    </Button>
+  );
+}
+
+interface FieldProps extends React.ComponentProps<typeof TextInput> { label: string; className?: string; mono?: boolean; error?: string | false; invalid?: boolean }
+
+function Field({ label, className, multiline, mono = false, error, invalid, ...props }: FieldProps) {
+  return (
+    <View className={cn('mb-3.5', className)}>
+      <Text className="mb-1.5 pl-1 text-[12.5px] font-medium text-text3">{label}</Text>
+      <Input
+        {...props}
+        invalid={invalid || Boolean(error)}
+        multiline={multiline}
+        className={cn(mono && 'font-mono text-[14.5px]', multiline && 'min-h-[116px] font-mono text-xs')}
+        textAlignVertical={multiline ? 'top' : 'center'}
+      />
+      {error ? <Text accessibilityLiveRegion="polite" className="mt-1.5 px-1 text-[12.5px] leading-[17px] text-blocked">{error}</Text> : null}
+    </View>
+  );
 }
 
 function JumpHostField({ jumpHost, onPress }: { jumpHost?: HostProfile; onPress: () => void }) {
   const { t } = useTranslation();
-  const { colors } = useTheme();
-  const appGlassEnabled = useAppGlassEnabled();
   return (
-    <View className="mb-3.5">
-      <Text className="mb-1.5 text-xs font-medium text-muted-foreground">{t('connection.jumpHost')}</Text>
-      <Button
+    <View>
+      <Text className="mb-1.5 pl-1 text-[12.5px] font-medium text-text3">{t('connection.jumpHost')}</Text>
+      <PickerRow
         accessibilityLabel={t('connection.chooseJumpHost')}
-        className={cn('h-[52px] justify-start rounded-md border border-border px-3.5', !appGlassEnabled && 'bg-card')}
-        style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-        variant="ghost"
-        onPress={hapticPress(onPress)}>
-        <Icon as={Network} size={18} />
-        <View className="min-w-0 flex-1">
-          <Text className="text-[14px] font-medium" numberOfLines={1}>
-            {jumpHost ? hostDisplayName(jumpHost) : t('connection.directConnection')}
-          </Text>
-          {jumpHost ? (
-            <Text className="mt-0.5 text-[11px] text-muted-foreground" numberOfLines={1}>
-              {jumpHost.username}@{jumpHost.host}:{jumpHost.port}
-            </Text>
-          ) : null}
-        </View>
-        <Icon as={ChevronDown} className="text-muted-foreground" size={17} />
-      </Button>
+        description={jumpHost ? `${jumpHost.username}@${jumpHost.host} · ${t('connection.likeSshJ')}` : t('connection.directConnectionCopy')}
+        highlighted={Boolean(jumpHost)}
+        icon={Route}
+        label={jumpHost ? hostDisplayName(jumpHost) : t('connection.directConnection')}
+        mono={Boolean(jumpHost)}
+        onPress={onPress}
+      />
     </View>
   );
 }
@@ -468,8 +547,6 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
   onSelectFile: () => void;
 }) {
   const { t } = useTranslation();
-  const { colors } = useTheme();
-  const appGlassEnabled = useAppGlassEnabled();
   if (hasKey) {
     return (
       <SshKeyCopySheet
@@ -481,28 +558,19 @@ function PrivateKeyActions({ hasKey, visible, onClose, onCopyPrivate, onCopyPubl
     );
   }
   return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <View className="flex-1 justify-end">
-        <Pressable accessibilityLabel={t('connection.closeKeyActions')} className="absolute inset-0 bg-black/55" onPress={onClose} />
-        <GlassSurface accessibilityViewIsModal className="rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
-          <Text className="px-2 text-lg font-semibold">{t('connection.addPrivateKey')}</Text>
-          <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">
-            {t('connection.chooseAddMethod')}
-          </Text>
-          {onGlobalKeychain ? <KeyAction icon={KeyRound} label={t('keychain.useGlobal')} onPress={onGlobalKeychain} /> : null}
-          <KeyAction icon={ClipboardPaste} label={t('connection.pasteClipboard')} onPress={onPaste} />
-          <KeyAction icon={FileUp} label={t('connection.selectFile')} onPress={onSelectFile} />
-          <KeyAction icon={Sparkles} label={t('connection.generateNew')} onPress={onGenerate} />
-          <Button
-            className={cn('mt-2 rounded-full', appGlassEnabled && 'border')}
-            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-            variant={appGlassEnabled ? 'ghost' : 'secondary'}
-            onPress={hapticPress(onClose)}>
-            <Text>{t('common.cancel')}</Text>
-          </Button>
-        </GlassSurface>
-      </View>
-    </Modal>
+    <BottomSheet
+      closeLabel={t('connection.closeKeyActions')}
+      subtitle={t('connection.chooseAddMethod')}
+      title={t('connection.addPrivateKey')}
+      visible={visible}
+      onClose={onClose}>
+      <ListGroup tone="raised" radius={20}>
+        <SheetAction icon={Sparkles} label={t('connection.generateNew')} onPress={onGenerate} />
+        <SheetAction icon={FileUp} label={t('connection.selectFile')} onPress={onSelectFile} />
+        <SheetAction icon={ClipboardPaste} label={t('connection.pasteClipboard')} onPress={onPaste} />
+        {onGlobalKeychain ? <SheetAction icon={KeyRound} label={t('keychain.useGlobal')} onPress={onGlobalKeychain} /> : null}
+      </ListGroup>
+    </BottomSheet>
   );
 }
 
@@ -513,43 +581,29 @@ function GlobalKeyPicker({ keys, visible, onClose, onSelect }: {
   onSelect: (key: GlobalSshKeyMaterial) => void;
 }) {
   const { t } = useTranslation();
-  const { colors } = useTheme();
-  const appGlassEnabled = useAppGlassEnabled();
   return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <View className="flex-1 justify-end">
-        <Pressable accessibilityLabel={t('keychain.closePicker')} className="absolute inset-0 bg-black/55" onPress={onClose} />
-        <GlassSurface accessibilityViewIsModal className="max-h-[72%] rounded-t-[28px] border-t border-white/30 px-4 pb-8 pt-5 dark:border-white/10">
-          <Text className="px-2 text-lg font-semibold">{t('keychain.chooseKey')}</Text>
-          <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">{t('keychain.chooseKeyCopy')}</Text>
-          <ScrollView contentContainerClassName="gap-2">
-            {keys.map(key => (
-              <Button
-                key={key.id}
-                className={cn('min-h-[68px] justify-start rounded-xl px-3 py-2', appGlassEnabled && 'border')}
-                style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-                size="content"
-                variant="ghost"
-                onPress={hapticPress(() => onSelect(key))}>
-                <Icon as={KeyRound} size={19} />
-                <View className="ml-1 min-w-0 flex-1">
-                  <Text className="text-[15px] font-medium" numberOfLines={1}>{key.name}</Text>
-                  <Text className="mt-0.5 font-mono text-[11px] text-muted-foreground" ellipsizeMode="middle" numberOfLines={1}>{key.fingerprint}</Text>
-                  <Text className="mt-0.5 text-[11px] text-muted-foreground">{key.keyType}</Text>
-                </View>
-              </Button>
-            ))}
-          </ScrollView>
-          <Button
-            className={cn('mt-2 rounded-full', appGlassEnabled && 'border')}
-            style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined}
-            variant={appGlassEnabled ? 'ghost' : 'secondary'}
-            onPress={hapticPress(onClose)}>
-            <Text>{t('common.cancel')}</Text>
-          </Button>
-        </GlassSurface>
-      </View>
-    </Modal>
+    <BottomSheet
+      closeLabel={t('keychain.closePicker')}
+      subtitle={t('keychain.chooseKeyCopy')}
+      title={t('keychain.chooseKey')}
+      visible={visible}
+      onClose={onClose}>
+      <ListGroup tone="raised" radius={20}>
+        {keys.map(key => (
+          <ListRow
+            key={key.id}
+            description={`${key.keyType} · ${key.fingerprint}`}
+            icon={KeyRound}
+            label={key.name}
+            minHeight={58}
+            monoDescription
+            tileRadius={11}
+            tileSize={34}
+            onPress={() => onSelect(key)}
+          />
+        ))}
+      </ListGroup>
+    </BottomSheet>
   );
 }
 
@@ -563,46 +617,35 @@ function JumpHostPicker({ hosts, selectedHostId, visible, onClose, onSelect }: {
   const { t } = useTranslation();
   const options: Array<HostProfile | null> = [null, ...hosts];
   return (
-    <Modal animationType="fade" transparent visible={visible} onRequestClose={onClose}>
-      <Pressable accessibilityLabel={t('connection.closeJumpHostPicker')} className="flex-1 justify-end bg-black/55" onPress={onClose}>
-        <Pressable className="max-h-[72%] rounded-t-[28px] border-t border-border bg-card px-4 pb-8 pt-5" onPress={event => event.stopPropagation()}>
-          <Text className="px-2 text-lg font-semibold">{t('connection.chooseJumpHost')}</Text>
-          <Text className="mb-3 mt-1 px-2 text-[13px] leading-[18px] text-muted-foreground">{t('connection.jumpHostCopy')}</Text>
-          <ScrollView>
-            {options.map(host => {
-              const selected = host ? host.id === selectedHostId : !selectedHostId;
-              return (
-                <Button
-                  key={host?.id || 'direct'}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected }}
-                  className="min-h-[62px] justify-start rounded-xl px-3 py-2"
-                  size="content"
-                  variant="ghost"
-                  onPress={hapticPress(() => onSelect(host?.id))}>
-                  <Icon as={host ? Network : ArrowRight} size={19} />
-                  <View className="ml-1 min-w-0 flex-1">
-                    <Text className="text-[15px] font-medium" numberOfLines={1}>
-                      {host ? hostDisplayName(host) : t('connection.directConnection')}
-                    </Text>
-                    <Text className="mt-0.5 text-[11px] text-muted-foreground" numberOfLines={1}>
-                      {host ? `${host.username}@${host.host}:${host.port}` : t('connection.directConnectionCopy')}
-                    </Text>
-                  </View>
-                  {selected ? <Icon as={Check} className="text-primary" size={18} /> : null}
-                </Button>
-              );
-            })}
-          </ScrollView>
-          <Button className="mt-2 rounded-full" variant="secondary" onPress={hapticPress(onClose)}><Text>{t('common.cancel')}</Text></Button>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <BottomSheet
+      closeLabel={t('connection.closeJumpHostPicker')}
+      subtitle={t('connection.jumpHostCopy')}
+      title={t('connection.chooseJumpHost')}
+      visible={visible}
+      onClose={onClose}>
+      <ListGroup tone="raised" radius={20}>
+        {options.map(host => {
+          const selected = host ? host.id === selectedHostId : !selectedHostId;
+          return (
+            <ListRow
+              key={host?.id || 'direct'}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selected, selected }}
+              description={host ? `${host.username}@${host.host}:${host.port}` : t('connection.directConnectionCopy')}
+              label={host ? hostDisplayName(host) : t('connection.directConnection')}
+              minHeight={58}
+              monoDescription={Boolean(host)}
+              trailing={<RadioMark selected={selected} />}
+              onPress={() => onSelect(host?.id)}
+            />
+          );
+        })}
+      </ListGroup>
+    </BottomSheet>
   );
 }
 
-function KeyAction({ icon, label, onPress }: { icon: typeof KeyRound; label: string; onPress: () => void }) {
+function SheetAction({ icon, label, onPress }: { icon: typeof KeyRound; label: string; onPress: () => void }) {
   const { colors } = useTheme();
-  const appGlassEnabled = useAppGlassEnabled();
-  return <Button className={cn('h-14 justify-start rounded-xl px-3', appGlassEnabled && 'border')} style={appGlassEnabled ? appGlassControlStyle(false, colors) : undefined} variant="ghost" onPress={hapticPress(onPress)}><Icon as={icon} size={19} /><Text className="text-[15px] font-medium">{label}</Text></Button>;
+  return <ListRow icon={icon} label={label} minHeight={58} tileBackground={colors.trackOff} tileRadius={11} tileSize={34} onPress={onPress} />;
 }

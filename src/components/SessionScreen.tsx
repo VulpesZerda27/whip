@@ -136,6 +136,7 @@ import { TerminalBackground, TerminalScreen } from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
 import { AgentInteractionControls } from './AgentInteractionControls';
 import { ChatSessionActions } from './ChatSessionActions';
+import { shortHomePath } from '../lib/paths';
 import { useAppGlassEnabled } from './GlassSurface';
 
 interface Props {
@@ -143,6 +144,7 @@ interface Props {
   onToggleReadAloud?: () => void;
   preferChat?: boolean;
   hostId: string;
+  hostName?: string;
   hostSessionId: string;
   visible: boolean;
   ttsEnabled: boolean;
@@ -193,6 +195,7 @@ export function SessionScreen({
   draftSaveError,
   onToggleReadAloud,
   preferChat = false,
+  hostName,
   hostSessionId,
   visible,
   ttsEnabled,
@@ -1636,7 +1639,10 @@ export function SessionScreen({
       {preferChat && (chatVisible || claudeStartupVisible) ? (
         <ChatSessionActions
           title={selectedTab?.label || 'Conversation'}
-          subtitle={`${preferredAgent ? chatAgentDisplayName(preferredAgent) : ''} · ${workspace?.label || 'Workspace'}`}
+          subtitle={[preferredAgent || 'agent', hostName].filter(Boolean).join(' · ')}
+          path={shortHomePath(activePane?.cwd) || workspace?.label || undefined}
+          onBack={onExit}
+          onOpenFiles={activeTerminalSession ? openFileManager : undefined}
           onOpenTerminal={closeActiveChat}
           key={activeTarget?.key || activePane?.pane_id}
           status={activePane?.agent_status || 'unknown'}

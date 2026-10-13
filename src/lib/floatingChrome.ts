@@ -15,8 +15,14 @@ export interface TerminalViewportLayout {
   terminalInsets: VisualContentInsets;
 }
 
-export const BOTTOM_NAVIGATION_BASE_HEIGHT = 64;
-export const BOTTOM_NAVIGATION_BOTTOM_OFFSET = 0;
+/** Floating dock: fixed 64 × 50 px icon items, 4 px apart inside 6 px padding, 14 px above the safe area. */
+export const DOCK_ITEM_WIDTH = 64;
+export const DOCK_ITEM_HEIGHT = 50;
+export const DOCK_ITEM_GAP = 4;
+export const DOCK_PADDING = 6;
+export const DOCK_BOTTOM_OFFSET = 14;
+/** Tab screens scroll with this much bottom padding so content clears the dock. */
+export const TAB_SCREEN_BOTTOM_PADDING = 132;
 export const TERMINAL_CONTROL_BAR_BASE_HEIGHT = 50;
 export const SESSION_TAB_BAR_HEIGHT = 55;
 export const SESSION_PANE_BAR_HEIGHT = 44;
@@ -26,7 +32,14 @@ export const LATEST_BUTTON_CLASS_NAME = 'absolute self-center rounded-full borde
 export const LATEST_BUTTON_ICON_SIZE = 28;
 
 export function bottomNavigationInset(bottomSafeAreaInset: number): number {
-  return BOTTOM_NAVIGATION_BOTTOM_OFFSET + BOTTOM_NAVIGATION_BASE_HEIGHT + bottomSafeAreaInset;
+  return TAB_SCREEN_BOTTOM_PADDING + Math.max(0, bottomSafeAreaInset);
+}
+
+/** Toast placement above the bottom edge (safe area excluded). */
+export function toastBottomOffset(context: 'tab' | 'session' | 'pushed'): number {
+  if (context === 'session') return 128;
+  if (context === 'pushed') return 86;
+  return 90;
 }
 
 export function terminalSessionChromeHeight(paneCount: number): number {

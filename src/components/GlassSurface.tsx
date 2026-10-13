@@ -44,7 +44,8 @@ export function GlassBackdrop({
   // stays translucent-only unless that architecture is revisited and profiled.
   const renderNativeBlur = Platform.OS !== 'android';
   if (!enabled && !renderLiquidGlass) {
-    return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.surface }]} />;
+    // Nightfall: without glass, surfaces are tonal `card` layers.
+    return <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.card }]} />;
   }
   return renderLiquidGlass ? (
     <LiquidGlassView
@@ -86,12 +87,12 @@ export function GlassSurface({
   ...props
 }: React.ComponentProps<typeof View> & { intensity?: number; fallbackClassName?: string }) {
   const glass = useContext(GlassContext);
-  const { colors } = useTheme();
   const enabled = glass?.enabled === true;
   return (
     <View
       className={cn('relative overflow-hidden', className, !enabled && fallbackClassName)}
-      style={[enabled ? undefined : { borderColor: colors.divider }, style]}
+      // Nightfall drops outlines on tonal surfaces; widths stay so layout does not shift.
+      style={[enabled ? undefined : { borderColor: 'transparent' }, style]}
       {...props}>
       {(enabled || fallbackClassName === undefined) && <GlassBackdrop intensity={intensity} shapeClassName={className} />}
       {children}

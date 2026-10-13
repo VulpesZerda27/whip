@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import type { ComposerDraftRequest } from '../lib/composerDraftRequest';
+import { hostDisplayName } from '../lib/hostProfiles';
 
 import type {
   TerminalControlId,
@@ -143,6 +144,7 @@ export function LiveSessionView({
       composerDraftRequest={composerDraftRequest}
       onComposerDraftConsumed={onComposerDraftConsumed}
       hostId={session.hostId}
+      hostName={hostDisplayName(session.host)}
       hostSessionId={sessionId}
       visible={visible}
       ttsEnabled={ttsEnabled}

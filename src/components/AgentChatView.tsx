@@ -6,9 +6,8 @@ import {
   type ViewToken,
 } from '@shopify/flash-list';
 import {
-  ArrowDown,
+  ArrowDownToLine,
   Check,
-  ChevronDown,
   ChevronRight,
   CircleAlert,
   Copy,
@@ -16,6 +15,7 @@ import {
   File,
   FileDiff,
   FilePlus,
+  GitBranch,
   Link,
   Search,
   SquareTerminal,
@@ -60,15 +60,15 @@ import {
 import { recordAgentChatDiagnostic } from '../services/agentChatDiagnostics';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
 import { hapticPress } from '../services/interactionFeedback';
-import { APP_GLASS_BORDER_CLASS_NAME, appGlassBackgroundClassName } from '../lib/appGlass';
-import { insetContentPadding, LATEST_BUTTON_CLASS_NAME, LATEST_BUTTON_ICON_SIZE, type VisualContentInsets } from '../lib/floatingChrome';
+import { appGlassBackgroundClassName } from '../lib/appGlass';
+import { insetContentPadding, type VisualContentInsets } from '../lib/floatingChrome';
 import { scrollOffsetFromDrag, scrollThumbGeometry } from '../lib/terminalScroll';
 import { transcriptFileHref, transcriptFileLinkTarget, type TranscriptFileLinkTarget } from '../lib/transcriptLinks';
 import { cn } from '../lib/utils';
-import { latestButtonStyle, useTheme } from '../theme';
+import { useTheme } from '../theme';
 import type { AgentStatus } from '../types';
 import { useReducedMotion } from './app-ui';
-import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
+import { useAppGlassEnabled } from './GlassSurface';
 import { MarkdownText } from './MarkdownText';
 import { NativeCodeBlock } from './NativeCodeBlock';
 import { JsonOutputViewer } from './JsonOutputViewer';
@@ -174,7 +174,7 @@ function ThinkingIndicator({ active = true }: { active?: boolean }) {
   return (
     <View accessibilityLiveRegion="polite" className="mt-3 min-h-5 flex-row items-center">
       <Animated.View style={style}>
-        <Text className="text-[13px] font-medium leading-5 text-muted-foreground">Thinking</Text>
+        <Text className="text-sm font-medium leading-5 text-text3">Thinking…</Text>
       </Animated.View>
     </View>
   );
@@ -315,7 +315,7 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
   const TitleIcon = presentation.icon;
   return (
     <View
-      className={cn('min-h-11 w-full overflow-hidden rounded-md px-2', failed ? 'bg-destructive/10' : 'bg-primary/10')}
+      className={cn('min-h-12 w-full overflow-hidden rounded-2xl px-3', failed ? 'bg-destructive/10' : 'bg-card')}
     >
       <Pressable
         accessibilityRole="button"
@@ -324,14 +324,14 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
           : undefined}
         accessibilityState={{ expanded }}
         disabled={!hasDetail && !presentation.href}
-        className="min-h-11 flex-row items-center py-1"
+        className="min-h-12 flex-row items-center py-1"
         onPress={hasDetail ? hapticPress(onToggle) : () => {
           if (presentation.href) onLinkPress(presentation.href);
         }}
       >
         {isRunning(item) && (
           <View className="mr-1.5 size-4 items-center justify-center">
-            <ActivityIndicator animating={active} size={13} color={colors.textTertiary} />
+            <ActivityIndicator animating={active} size={13} color={colors.working} />
           </View>
         )}
         {failed && (
@@ -339,15 +339,14 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
             <CircleAlert size={14} color={colors.error} />
           </View>
         )}
-        <View className="min-w-0 shrink flex-row items-center gap-1.5">
+        <View className="min-w-0 shrink flex-row items-center gap-2">
           {TitleIcon
-            ? <TitleIcon size={16} color={colors.text} />
-            : <Text numberOfLines={1} className="shrink-0 text-[13px] font-medium leading-5 text-foreground">
+            ? <TitleIcon size={17} color={colors.textTertiary} />
+            : <Text numberOfLines={1} className="shrink-0 text-sm font-semibold leading-5 text-foreground">
               <SearchText text={presentation.title} />
             </Text>}
-          {displayedSubtitle && !isRunning(item) && (
+          {displayedSubtitle && (!isRunning(item) || presentation.kind === 'command') && (
             <>
-              <Text className="text-[11px] leading-5 text-muted-foreground">·</Text>
               {presentation.href ? (
                 <Pressable
                   accessibilityRole="link"
@@ -356,25 +355,25 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
                   hitSlop={SMALL_ICON_HIT_SLOP}
                   onPress={event => { event.stopPropagation(); onLinkPress(presentation.href!); }}
                 >
-                  <Text numberOfLines={1} className="text-[13px] leading-5 text-primary underline"><SearchText text={displayedSubtitle} /></Text>
+                  <Text numberOfLines={1} className="font-mono text-[12.5px] leading-5 text-primary"><SearchText text={displayedSubtitle} /></Text>
                 </Pressable>
               ) : (
-                <Text numberOfLines={1} className="min-w-0 shrink text-[13px] leading-5 text-muted-foreground">
+                <Text numberOfLines={1} className="min-w-0 shrink font-mono text-[12.5px] leading-5 text-text2">
                   <SearchText text={displayedSubtitle} />
                 </Text>
               )}
             </>
           )}
           {!isRunning(item) && presentation.args.map(arg => (
-            <Text key={arg} numberOfLines={1} className="shrink text-[12px] leading-5 text-muted-foreground">
+            <Text key={arg} numberOfLines={1} className="shrink text-[12px] leading-5 text-text3">
               <SearchText text={arg} />
             </Text>
           ))}
         </View>
         {changes && !isRunning(item) && (
           <View className="ml-2 shrink-0 flex-row gap-1.5">
-            <Text className="font-mono text-[11px] leading-5" style={{ color: colors.done }}>+{changes.additions}</Text>
-            <Text className="font-mono text-[11px] leading-5" style={{ color: colors.error }}>−{changes.deletions}</Text>
+            <Text className="font-mono text-[12.5px] leading-5" style={{ color: colors.done }}>+{changes.additions}</Text>
+            <Text className="font-mono text-[12.5px] leading-5" style={{ color: colors.error }}>−{changes.deletions}</Text>
           </View>
         )}
         {presentation.href && !isRunning(item) && (
@@ -382,9 +381,11 @@ function ToolCard({ item, expanded, onToggle, active, onLinkPress }: BlockExpans
             <ExternalLink size={14} color={colors.textTertiary} />
           </Pressable>
         )}
-        {hasDetail && (expanded
-          ? <ChevronDown className="ml-1" size={15} color={colors.textTertiary} />
-          : <ChevronRight className="ml-1" size={15} color={colors.textTertiary} />)}
+        {hasDetail && (
+          <View className="ml-auto pl-1" style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
+            <ChevronRight size={16} color={colors.decor} />
+          </View>
+        )}
       </Pressable>
       {expanded && hasDetail && (
         <View className="mb-3 mt-1 gap-2">
@@ -578,16 +579,14 @@ function TranscriptNoticeCard({
   className,
   ...props
 }: React.ComponentProps<typeof View> & { error?: boolean }) {
-  const glass = useAppGlassEnabled();
   return (
-    <GlassSurface
+    <View
       {...props}
       className={cn(
-        'w-full gap-2 rounded-md px-3 py-2.5',
-        glass && APP_GLASS_BORDER_CLASS_NAME,
+        'w-full gap-2 rounded-2xl px-3.5 py-3',
+        error ? 'bg-destructive/10' : 'bg-card',
         className,
       )}
-      fallbackClassName={error ? 'bg-destructive/10' : 'bg-muted'}
     />
   );
 }
@@ -708,12 +707,16 @@ function UserPrompt({ message, imageClient, directory, active, simpleChat }: {
   if (!text) return null;
   const meta = formatTime(message.createdAt);
   return (
-    <View className={simpleChat ? 'ml-5 items-end' : 'ml-9 items-end'}>
-      <Pressable accessibilityLabel="Copy prompt" className={cn('min-h-11 gap-2 rounded-xl bg-purple-950 px-3 py-2.5', simpleChat ? 'max-w-[94%]' : 'max-w-[86%]')} onLongPress={copyPrompt}>
+    <View className="ml-9 items-end">
+      <Pressable
+        accessibilityLabel="Copy prompt"
+        className="min-h-11 max-w-[86%] gap-2 bg-selection px-3.5 py-2.5"
+        style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomRightRadius: 6, borderBottomLeftRadius: 20 }}
+        onLongPress={copyPrompt}>
         {parts.map(part => part.type === 'image'
           ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
           : part.type === 'text' && part.text.trim()
-            ? <Text key={part.id} selectable className="text-[14px] leading-[20px] text-purple-50"><SearchText text={part.text} /></Text>
+            ? <Text key={part.id} selectable className="text-[15px] leading-[22px] text-foreground"><SearchText text={part.text} /></Text>
             : null)}
       </Pressable>
       {!simpleChat && <View className="mt-1 flex-row items-center gap-1 px-1">
@@ -764,14 +767,15 @@ function ChangedFiles({ turn, expanded, onToggle }: BlockExpansion & { turn: Tra
   const additions = turn.diffs.reduce((total, diff) => total + diff.additions, 0);
   const deletions = turn.diffs.reduce((total, diff) => total + diff.deletions, 0);
   return (
-    <View className="mt-2 border-t border-border pt-2">
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="min-h-11 flex-row items-center" onPress={onToggle}>
-        <Text className="text-[11px] font-medium text-foreground">Changed {turn.diffs.length} file{turn.diffs.length === 1 ? '' : 's'}</Text>
-        <Text className="ml-2 font-mono text-[10px]" style={{ color: colors.done }}>+{additions}</Text>
-        <Text className="ml-1 font-mono text-[10px]" style={{ color: colors.error }}>−{deletions}</Text>
-        {expanded
-          ? <ChevronDown className="ml-auto" size={14} color={colors.textTertiary} />
-          : <ChevronRight className="ml-auto" size={14} color={colors.textTertiary} />}
+    <View className="mt-2">
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded }} className="h-[52px] flex-row items-center gap-2.5 rounded-2xl bg-card px-3.5 active:bg-raised" onPress={onToggle}>
+        <GitBranch size={17} color={colors.textTertiary} />
+        <Text className="text-sm font-semibold text-foreground">Changed {turn.diffs.length} file{turn.diffs.length === 1 ? '' : 's'}</Text>
+        <Text className="font-mono text-[12.5px]" style={{ color: colors.done }}>+{additions}</Text>
+        <Text className="font-mono text-[12.5px]" style={{ color: colors.error }}>−{deletions}</Text>
+        <View className="ml-auto" style={{ transform: [{ rotate: expanded ? '90deg' : '0deg' }] }}>
+          <ChevronRight size={16} color={colors.decor} />
+        </View>
       </Pressable>
     </View>
   );
@@ -803,7 +807,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
       case 'meta': return simpleChat
         ? block.turn.status === 'interrupted'
-          ? <Text className="text-xs text-muted-foreground">Interrupted</Text>
+          ? <View className="flex-row items-center gap-3 py-1"><View className="h-px flex-1 bg-line" /><Text className="text-[12.5px] text-text3">Interrupted</Text><View className="h-px flex-1 bg-line" /></View>
           : null
         : <TurnMeta turn={block.turn} />;
     }
@@ -1587,19 +1591,22 @@ export function AgentChatView({
         {!followEnd && !scrolling && !nearEnd(scrollGeometry.offset, maxOffset) && (
           <Button
             accessibilityLabel="Jump to latest"
-            className={LATEST_BUTTON_CLASS_NAME}
-            style={[
-              { bottom: latestButtonBottom },
-              latestButtonStyle(colors),
-            ]}
-            variant="secondary"
-            size="icon"
+            className="absolute h-10 min-h-0 flex-row gap-1.5 self-center rounded-full bg-overlay px-4 active:bg-raised"
+            style={{
+              bottom: latestButtonBottom,
+              borderWidth: 1,
+              borderColor: `${colors.primary}59`,
+              boxShadow: [{ offsetX: 0, offsetY: 10, blurRadius: 24, spreadDistance: 0, color: 'rgba(0,0,0,0.4)' }],
+            }}
+            variant="ghost"
+            size="content"
             onPress={() => {
               setFollowEnd(true);
               scrollToLatest(true);
             }}
           >
-            <ArrowDown size={LATEST_BUTTON_ICON_SIZE} color={colors.text} />
+            <ArrowDownToLine size={16} color={colors.text} />
+            <Text className="text-[13.5px] font-semibold">Latest</Text>
           </Button>
         )}
         {scrollThumb && (

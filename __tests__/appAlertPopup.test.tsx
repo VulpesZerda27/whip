@@ -1,9 +1,4 @@
-import {
-  act,
-  create,
-  type ReactTestInstance,
-  type ReactTestRenderer,
-} from 'react-test-renderer';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { AppAlertPopup } from '../src/components/AppAlertPopup';
 
@@ -11,31 +6,12 @@ jest.mock('lucide-react-native', () => ({ CircleAlert: 'CircleAlert' }));
 jest.mock('react-native-css-interop/jsx-runtime', () =>
   jest.requireActual('react/jsx-runtime'),
 );
-jest.mock('react-native', () => ({
-  Modal: 'Modal',
-  Pressable: 'Pressable',
-  View: 'View',
-}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => (key === 'common.close' ? 'Close' : key),
   }),
 }));
-jest.mock('../src/theme', () => ({
-  useTheme: () => ({ colors: { error: '#CF222E' } }),
-}));
-jest.mock('../src/components/app-ui', () => ({
-  hapticPress: (handler: () => void) => handler,
-}));
-jest.mock('../src/components/GlassSurface', () => ({
-  GlassSurface: 'GlassSurface',
-}));
-jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
-jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
-
-function findHost(root: ReactTestInstance, type: string): ReactTestInstance {
-  return root.find(node => node.type === type);
-}
+jest.mock('../src/components/nightfall', () => ({ Dialog: 'Dialog' }));
 
 describe('AppAlertPopup', () => {
   let renderer: ReactTestRenderer;
@@ -44,7 +20,7 @@ describe('AppAlertPopup', () => {
     act(() => renderer?.unmount());
   });
 
-  test('shows the original error in a centered glass popup and dismisses from its action', async () => {
+  test('shows the original error in a Nightfall dialog that dismisses from its only action', () => {
     const onClose = jest.fn();
     act(() => {
       renderer = create(
@@ -57,25 +33,17 @@ describe('AppAlertPopup', () => {
       );
     });
 
-    const modal = findHost(renderer.root, 'Modal');
-    const glassSurface = findHost(renderer.root, 'GlassSurface');
-    const text = renderer.root
-      .findAll(node => (node.type as unknown) === 'Text')
-      .flatMap(node => node.children);
-
-    expect(modal.props).toEqual(
-      expect.objectContaining({ transparent: true, visible: true }),
-    );
-    expect(glassSurface.props.className).toContain('max-w-[380px]');
-    expect(glassSurface.props.className).toContain('rounded-[24px]');
-    expect(glassSurface.props.className).toContain('dark:border-white/10');
-    expect(text).toContain('Herdr command failed');
-    expect(text).toContain('remote command exited with status 127');
-
-    await act(() => findHost(renderer.root, 'Button').props.onPress());
+    const dialog = renderer.root.find(node => (node.type as unknown) === 'Dialog');
+    expect(dialog.props).toEqual(expect.objectContaining({
+      title: 'Herdr command failed',
+      body: 'remote command exited with status 127',
+      confirmLabel: 'Close',
+      icon: 'CircleAlert',
+      visible: true,
+    }));
+    // A single acknowledgement: no cancel, so system back confirms the dismissal.
+    expect(dialog.props.onCancel).toBeUndefined();
+    dialog.props.onConfirm();
     expect(onClose).toHaveBeenCalledTimes(1);
-
-    await act(() => modal.props.onRequestClose());
-    expect(onClose).toHaveBeenCalledTimes(2);
   });
 });

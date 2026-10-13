@@ -14,11 +14,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: cn('bg-primary active:bg-primary/90 shadow-sm shadow-black/5', Platform.select({ web: 'hover:bg-primary/90' })),
-        destructive: cn('bg-destructive active:bg-destructive/90 dark:bg-destructive/60 shadow-sm shadow-black/5', Platform.select({ web: 'hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40' })),
-        outline: cn('border-border bg-background active:bg-accent dark:bg-input/30 dark:border-input dark:active:bg-input/50 border shadow-sm shadow-black/5', Platform.select({ web: 'hover:bg-accent dark:hover:bg-input/50' })),
-        secondary: cn('bg-secondary active:bg-secondary/80 shadow-sm shadow-black/5', Platform.select({ web: 'hover:bg-secondary/80' })),
-        ghost: cn('active:bg-accent dark:active:bg-accent/50', Platform.select({ web: 'hover:bg-accent dark:hover:bg-accent/50' })),
+        // Nightfall: tonal layers instead of outlines; one solid accent.
+        default: cn('bg-primary active:bg-primary/90', Platform.select({ web: 'hover:bg-primary/90' })),
+        destructive: cn('bg-destructive active:bg-destructive/90', Platform.select({ web: 'hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40' })),
+        outline: cn('bg-card active:bg-raised', Platform.select({ web: 'hover:bg-raised' })),
+        secondary: cn('bg-raised active:bg-overlay', Platform.select({ web: 'hover:bg-overlay' })),
+        ghost: cn('active:bg-raised', Platform.select({ web: 'hover:bg-raised' })),
         link: '',
       },
       size: {
@@ -54,14 +55,14 @@ const buttonVariants = cva(
   }
 );
 
-const buttonTextVariants = cva('text-foreground text-sm font-medium', {
+const buttonTextVariants = cva('text-foreground text-[14.5px] font-semibold', {
   variants: {
     variant: {
       default: 'text-primary-foreground',
       destructive: 'text-destructive-foreground',
-      outline: cn('group-active:text-accent-foreground', Platform.select({ web: 'group-hover:text-accent-foreground' })),
+      outline: '',
       secondary: 'text-secondary-foreground',
-      ghost: 'group-active:text-accent-foreground',
+      ghost: '',
       link: cn('text-primary group-active:underline', Platform.select({ web: 'underline-offset-4 hover:underline group-hover:underline' })),
     },
     size: { default: '', sm: '', lg: '', icon: '', content: '' },

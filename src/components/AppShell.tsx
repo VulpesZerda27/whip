@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BlurTargetView } from 'expo-blur';
 import { Platform, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
 import type { DevicePreferencesController } from '../hooks/useDevicePreferences';
@@ -15,6 +15,15 @@ import type { useLiveHostTelemetry } from '../hooks/useLiveHostTelemetry';
 import type { useTerminalHistory } from '../hooks/useTerminalHistory';
 import type { useTerminalSessions } from '../hooks/useTerminalSessions';
 import { hostRuntimeSummary } from '../lib/hostRuntimeSummary';
+import {
+  buildChatRows,
+  chatDockBadge,
+  chatHeadsUpEvents,
+  chatStatusSnapshot,
+  type ChatHeadsUp,
+} from '../lib/chatList';
+import { chatKey } from '../services/chatLibrary';
+import { toastBottomOffset } from '../lib/floatingChrome';
 import {
   isLiveHostSshConnected,
   visibleLiveHostLatency,
@@ -33,6 +42,8 @@ import {
   TerminalVolumeKeyBinding,
 } from './AppPlatformBindings';
 import { BottomNavigation } from './BottomNavigation';
+import { ToastProvider } from './nightfall';
+import { HeadsUpCard } from './HeadsUp';
 import { ConnectRequiredScreen } from './ConnectRequiredScreen';
 import { useCodexHosts } from '../hooks/useCodexHosts';
 import { CodexChatScreen } from './CodexChatScreen';
@@ -43,7 +54,7 @@ import { useCodexReadSync } from '../hooks/useCodexReadSync';
 import { useCodexNotificationNavigation } from '../hooks/useCodexNotificationNavigation';
 import type { useAgentNotifications } from '../hooks/useAgentNotifications';
 import { codexChatKey } from '../services/codexDaemon';
-import { ChatsScreen } from './ChatsScreen';
+import { ChatsScreen, type ChatsScopeRequest } from './ChatsScreen';
 import { useChatLibrary } from '../hooks/useChatLibrary';
 import { useChatExperience } from '../hooks/useChatExperience';
 import { GlassProvider } from './GlassSurface';
@@ -82,6 +93,7 @@ export function AppShell({
 }: AppShellProps) {
   const { t } = useTranslation();
   const { colors: theme, isDark } = useTheme();
+  const { bottom: bottomInset } = useSafeAreaInsets();
   const navigationBlurTargetRef = useRef<View | null>(null);
   const storedPreferences = preferences.value;
   const effectivePreferences = storedPreferences;
@@ -96,6 +108,11 @@ export function AppShell({
   } = effectivePreferences;
   const codexHosts = useCodexHosts(sessions, !security.locked && !hosts.editorProfile, {alertsEnabled, agentAlertLevel, persistentAlertDurationSeconds, ttsEnabled});
   const [codexSelection, setCodexSelection] = useState<{hostId:string;threadId:string} | null>(null);
+  const [chatsScope, setChatsScope] = useState<ChatsScopeRequest | null>(null);
+  const openChatsFor = (hostId: string, status: 'blocked' | null = null) => {
+    setChatsScope(previous => ({ hostId, status, nonce: (previous?.nonce ?? 0) + 1 }));
+    navigation.selectTab('chats');
+  };
   const codexHost = codexHosts.find(h=>h.hostId===codexSelection?.hostId);
   const codexVisible = Boolean(codexSelection && navigation.state.tab === 'chat');
   const openCodex = (hostId:string,threadId:string) => {
@@ -149,6 +166,47 @@ export function AppShell({
     hosts.unlockedGlobalKeys !== null ||
     hosts.knownHostsOpen ||
     navigation.licensesOpen;
+  const chatActivity = chatLibrary.value.activity;
+  const chatRows = buildChatRows(sessions.presentationSessions, codexHosts, chatActivity);
+  const chatsBadge = chatDockBadge(chatRows, chatActivity);
+  // In-app heads-up: a chat you are not viewing starts needing you or finishes.
+  const [headsUp, setHeadsUp] = useState<ChatHeadsUp | null>(null);
+  const chatStatusesRef = useRef<Map<string, string> | null>(null);
+  const chatStatuses = chatStatusSnapshot(chatRows, chatActivity);
+  const chatStatusSignature = [...chatStatuses].map(([key, status]) => `${key}=${status}`).join('|');
+  const viewingChatKey = navigation.state.tab !== 'chat'
+    ? null
+    : codexVisible && codexSelection
+      ? chatKey(codexSelection.hostId, codexChatKey(codexSelection.threadId))
+      : activeSession && activeChatPaneId ? chatKey(activeSession.hostId, activeChatPaneId) : null;
+  useEffect(() => {
+    const previous = chatStatusesRef.current;
+    chatStatusesRef.current = chatStatuses;
+    if (!previous || !libraryLoaded || security.locked) return;
+    const events = chatHeadsUpEvents(previous, chatRows, chatActivity)
+      .filter(event => event.key !== viewingChatKey);
+    const event = events.find(item => item.status === 'blocked') ?? events[0];
+    if (event) setHeadsUp(event);
+    // The signature captures every status the effect compares.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatStatusSignature, libraryLoaded, security.locked]);
+  const dismissHeadsUp = useCallback(() => setHeadsUp(null), []);
+  const openHeadsUp = (event: ChatHeadsUp) => {
+    setHeadsUp(null);
+    const { row } = event;
+    if (row.terminalOnly) sessions.openAgentTerminal(row.session.id, row.agent);
+    else if (row.thread) openCodex(row.session.hostId, row.thread.id);
+    else {
+      setCodexSelection(null);
+      reportBackgroundFailure(
+        chatExperience.open({ hostId: row.session.hostId, paneId: row.agent.pane_id }),
+        'heads-up-open',
+      );
+    }
+  };
+  const toastOffset = bottomInset + toastBottomOffset(
+    overlaysVisible ? 'pushed' : immersiveTerminal ? 'session' : 'tab',
+  );
 
   return (
     <SpinnerFrameRateProvider smoothSpinners={storedPreferences.smoothSpinners}>
@@ -171,6 +229,7 @@ export function AppShell({
           blurTarget={navigationBlurTargetRef}
           enabled={false}
         >
+          <ToastProvider bottomOffset={toastOffset}>
           <View className="flex-1 bg-background">
             <NavigationBlurTarget
               ref={navigationBlurTargetRef}
@@ -185,7 +244,9 @@ export function AppShell({
                 style={
                   immersiveTerminal
                     ? styles.hiddenTab
-                    : styles.navigationForeground
+                    // Opaque so the parked session view behind never shows
+                    // around the floating dock.
+                    : [styles.navigationForeground, { backgroundColor: theme.canvas }]
                 }
               >
                 {navigation.mountedTabs.has('chats') ? (
@@ -194,6 +255,7 @@ export function AppShell({
                     pointerEvents={navigation.state.tab === 'chats' ? 'auto' : 'none'}
                     style={navigation.state.tab === 'chats' ? styles.tabScreen : styles.hiddenTab}
                   >
+                    <AgentStatusAnimationProvider enabled={navigation.state.tab === 'chats'}>
                     <ChatsScreen
                       library={chatLibrary}
                       codexHosts={codexHosts}
@@ -204,7 +266,9 @@ export function AppShell({
                       sessions={sessions}
                       onManageHosts={() => navigation.selectTab('hosts')}
                       onShowChats={() => navigation.selectTab('chats')}
+                      scopeRequest={chatsScope}
                     />
+                    </AgentStatusAnimationProvider>
                   </View>
                 ) : null}
 
@@ -237,6 +301,12 @@ export function AppShell({
                                 isLiveHostSshConnected(session.connectionStatus),
                               )
                               .map(session => session.hostId)}
+                            connectionByHostId={Object.fromEntries(
+                              sessions.presentationSessions.map(session => [
+                                session.hostId,
+                                session.connectionStatus,
+                              ]),
+                            )}
                             latencyMsByHostId={Object.fromEntries(
                               sessions.presentationSessions.map(session => [
                                 session.hostId,
@@ -266,11 +336,18 @@ export function AppShell({
                               hosts.credentialRecoveryBusy
                             }
                             onAdd={hosts.openNewHost}
-                            onConnect={host => {
-                              sessions
-                                .connectSavedHost(host)
-                                .catch(error => hosts.setError(String(error)));
+                            onConnect={async host => {
+                              try {
+                                await sessions.connectSavedHost(host, { navigate: false });
+                              } catch (error) {
+                                hosts.setError(String(error));
+                                return false;
+                              }
+                              return sessions.getState().sessions.some(
+                                session => session.hostId === host.id && isLiveHostSshConnected(session.connectionStatus),
+                              );
                             }}
+                            onOpenChats={(host, status) => openChatsFor(host.id, status ?? null)}
                             onOpenTerminal={host => {
                               setCodexSelection(null);
                               reportBackgroundFailure((async () => {
@@ -340,6 +417,7 @@ export function AppShell({
                 daemon={codexHost.client} client={sessions.getClient(codexHost.sessionId)!}
                 onOpenFile={(target,cwd)=>remoteFiles.open(codexHost.sessionId,codexChatKey(codexSelection.threadId),target,cwd)}
                 draftRequest={remoteFiles.draftRequest?.hostSessionId===codexHost.sessionId ? remoteFiles.draftRequest : undefined}
+                onBack={() => navigation.selectTab('chats')}
                 onConsumeDraft={remoteFiles.consumeDraft}
                 onTerminal={async (threadId,cwd)=>{
                   await openCodexTerminal(sessions, codexHost.sessionId, threadId, cwd);
@@ -417,6 +495,7 @@ export function AppShell({
             {!immersiveTerminal && !overlaysVisible && (
               <BottomNavigation
                 activeTab={navigation.state.tab}
+                chatsBadge={chatsBadge}
                 onSelect={navigation.selectTab}
               />
             )}
@@ -429,7 +508,11 @@ export function AppShell({
               remoteFiles={remoteFiles}
               security={security}
             />
+            {headsUp && !security.locked && headsUp.key !== viewingChatKey ? (
+              <HeadsUpCard event={headsUp} onDismiss={dismissHeadsUp} onOpen={() => openHeadsUp(headsUp)} />
+            ) : null}
           </View>
+          </ToastProvider>
         </GlassProvider>
       </SafeAreaView>
     </SpinnerFrameRateProvider>

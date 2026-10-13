@@ -32,11 +32,28 @@ jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: (_target, name) => String(name) }),
 );
-jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }) }));
+jest.mock('../src/theme', () => ({
+  useTheme: () => ({ colors: {} }),
+  statusColor: (status: string) => status,
+  statusTint: (color: string) => color,
+  nightfallShadows: {},
+}));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
-jest.mock('../src/components/app-ui', () => ({ StatusBadge: 'StatusBadge' }));
+jest.mock('../src/components/app-ui', () => ({ AgentStatusMedallion: 'AgentStatusMedallion' }));
+jest.mock('../src/components/nightfall', () => {
+  const { createElement } = jest.requireActual('react');
+  return {
+    ActionButton: ({ label, accessibilityLabel, onPress, disabled }: { label: string; accessibilityLabel?: string; onPress: () => unknown; disabled?: boolean }) =>
+      createElement('Button', { accessibilityLabel: accessibilityLabel ?? label, onPress, disabled }),
+    BusySpinner: 'BusySpinner',
+    ListGroup: ({ children }: { children: unknown }) => createElement('ListGroup', null, children),
+    SectionLabel: 'SectionLabel',
+    SegmentedControl: ({ options, onChange }: { options: { value: string; label: string }[]; onChange: (value: string) => void }) =>
+      options.map(option => createElement('Button', { key: option.value, accessibilityLabel: option.label, onPress: () => onChange(option.value) })),
+  };
+});
 jest.mock('../src/services/backgroundOperations', () => ({
   reportBackgroundFailure: (promise: Promise<void>) => promise,
 }));
@@ -89,6 +106,7 @@ function setup() {
       host,
       connectionStatus: 'ready',
       snapshot: {
+        server: { running: true },
         agents: [],
         workspaces: [
           { workspace_id: `workspace-${host.id}`, label: host.name },
@@ -292,7 +310,7 @@ test('chats sort blocked, done, working, then idle', async () => {
   });
   await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
   const chats = renderer.root.findAll(node => String(node.type) === 'Button' && String(node.props.accessibilityLabel).startsWith('Open chat '));
-  expect(chats.map(chat => chat.find(node => String(node.type) === 'StatusBadge').props.status)).toEqual(['blocked', 'done', 'working', 'idle']);
+  expect(chats.map(chat => chat.find(node => String(node.type) === 'AgentStatusMedallion').props.status)).toEqual(['blocked', 'done', 'working', 'idle']);
 });
 
 test('only open Herdr conversations are listed, deduplicated by exact Codex ID, with terminal access for unlinked agents', async () => {
@@ -339,8 +357,9 @@ test('an acknowledged Codex completion displays idle and drops out of Needs you'
   const library = { loaded: true, error: null, update: jest.fn(), value: updateCodexActivity(emptyChatLibrary, [{ hostId: 'host-0', threads: [thread] }]) };
   const codexHosts = [{ hostId: 'host-0', sessionId: 'session-host-0', name: 'First', snapshot: { connected: true, requests: [], threads: [thread] } }];
   await act(async () => { renderer = create(<ChatsScreen library={library} hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} codexHosts={codexHosts as unknown as import('../src/hooks/useCodexHosts').CodexHost[]} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
-  expect(button('Open chat Read chat on First').findByType('StatusBadge' as never).props.status).toBe('idle');
-  expect(JSON.stringify(renderer.toJSON())).not.toContain('Needs you (1)');
+  expect(button('Open chat Read chat on First').findByType('AgentStatusMedallion' as never).props.status).toBe('idle');
+  expect(button('Need you, 0')).toBeDefined();
+  expect(button('Done, 0')).toBeDefined();
 });
 
 function codexAgent(id: string, pane = 'codex-pane') {

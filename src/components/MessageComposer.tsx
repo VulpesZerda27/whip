@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
-import { Maximize2, Mic, Paperclip, Send, X } from 'lucide-react-native';
+import { ArrowUp, Maximize2, Mic, Minimize2, Paperclip, Send, X } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Alert,
@@ -117,6 +117,8 @@ interface MessageComposerProps extends ComposerInputProps {
     sendColor: ColorValue;
     sendDisabled?: boolean;
     sending?: boolean;
+    /** Something besides draft text is ready to send (e.g. an attachment). */
+    ready?: boolean;
   };
   beforeInput?: ReactNode;
   className?: string;
@@ -126,6 +128,9 @@ interface MessageComposerProps extends ComposerInputProps {
   inputRef?: Ref<TextInputHandle>;
   surfaceClassName?: string;
 }
+
+const COMPACT_INPUT_HEIGHT = 44;
+const EXPANDED_INPUT_HEIGHT = 168;
 
 /** Shared composer layout used by terminal and native agent chat. */
 export function MessageComposer({
@@ -141,10 +146,15 @@ export function MessageComposer({
 }: MessageComposerProps) {
   const { colors } = useTheme();
   const [recording, setRecording] = useState(false);
-  const [inputHeight, setInputHeight] = useState(44);
-  useEffect(() => { setInputHeight(44); }, [inputProps.pasteTargetKey]);
+  const [focused, setFocused] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [inputHeight, setInputHeight] = useState(COMPACT_INPUT_HEIGHT);
   useEffect(() => {
-    if (!inputProps.initialValue) setInputHeight(44);
+    setInputHeight(COMPACT_INPUT_HEIGHT);
+    setExpanded(false);
+  }, [inputProps.pasteTargetKey]);
+  useEffect(() => {
+    if (!inputProps.initialValue) setInputHeight(COMPACT_INPUT_HEIGHT);
   }, [inputProps.initialValue]);
   const recordingRef = useRef(false);
   const localInput = useRef<TextInputHandle | null>(null);
@@ -188,39 +198,73 @@ export function MessageComposer({
   const actionColor = glass ? colors.text : actions.actionColor;
   const sendColor = glass ? colors.primary : actions.sendColor;
   if (compact) {
+    const hasContent = Boolean(inputProps.initialValue?.trim()) || Boolean(actions.ready);
+    const ready = hasContent && !actions.sendDisabled;
+    const submit = hapticSend(actions.onSend);
     return (
-      <View className={cn('min-w-0 rounded-3xl border border-border bg-background p-1', className)}>
+      <View className={cn('min-w-0', className)}>
         {beforeInput}
-        <View className="min-w-0 flex-row items-end">
-          <Button accessibilityLabel={actions.attachLabel} className="size-11 rounded-full px-0" variant="ghost" onPress={actions.onAttach}>
-            <Paperclip size={19} color={colors.text} />
+        <View className="min-w-0 flex-row items-end gap-2">
+          <Button accessibilityLabel={actions.attachLabel} className="size-11 rounded-full bg-card px-0 active:bg-raised" size="content" variant="ghost" onPress={actions.onAttach}>
+            <Paperclip size={19} color={colors.textSecondary} />
           </Button>
-          <ComposerInput
-            {...inputProps}
-            ref={bindInput}
-            numberOfLines={1}
-            placeholder="Message…"
-            placeholderTextColor={colors.textTertiary}
-            selectionColor={colors.primary}
-            className="min-w-0 flex-1 rounded-none border-0 bg-transparent px-1 py-2.5 text-base leading-6 text-foreground shadow-none"
-            style={[inputProps.style, { height: inputHeight }]}
-            onContentSizeChange={event => {
-              setInputHeight(Math.max(44, Math.min(136, Math.ceil(event.nativeEvent.contentSize.height))));
-              inputProps.onContentSizeChange?.(event);
-            }}
-          />
-          {voiceDictationAvailable ? (
-            <Button accessibilityLabel={recording ? 'Recording voice message' : 'Record voice message'} disabled={recording} className="size-11 rounded-full px-0" variant="ghost" onPress={dictate}>
-              {recording ? <ActivityIndicator size="small" color={colors.text} /> : <Mic size={19} color={colors.text} />}
+          <View
+            className="min-w-0 flex-1 flex-row items-end rounded-[23px] bg-card pl-4 pr-1"
+            style={{ minHeight: 46, borderWidth: 1.5, borderColor: focused ? `${colors.primary}8C` : 'transparent' }}
+          >
+            <ComposerInput
+              {...inputProps}
+              ref={bindInput}
+              numberOfLines={1}
+              placeholder={inputProps.placeholder ?? 'Message…'}
+              placeholderTextColor={colors.textTertiary}
+              selectionColor={colors.primary}
+              className="h-auto min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-[11px] text-[15px] leading-[22px] text-foreground shadow-none"
+              style={[inputProps.style, { height: expanded ? EXPANDED_INPUT_HEIGHT : inputHeight }]}
+              textAlignVertical="top"
+              onFocus={event => {
+                setFocused(true);
+                inputProps.onFocus?.(event);
+              }}
+              onBlur={event => {
+                setFocused(false);
+                inputProps.onBlur?.(event);
+              }}
+              onContentSizeChange={event => {
+                setInputHeight(Math.max(COMPACT_INPUT_HEIGHT, Math.min(136, Math.ceil(event.nativeEvent.contentSize.height))));
+                inputProps.onContentSizeChange?.(event);
+              }}
+            />
+            {voiceDictationAvailable ? (
+              <Button accessibilityLabel={recording ? 'Recording voice message' : 'Record voice message'} disabled={recording} className="size-[38px] min-h-0 min-w-0 rounded-full px-0 active:bg-raised" size="content" variant="ghost" style={{ marginBottom: 3 }} onPress={dictate}>
+                {recording ? <ActivityIndicator size="small" color={colors.text} /> : <Mic size={18} color={colors.textTertiary} />}
+              </Button>
+            ) : null}
+            <Button
+              accessibilityLabel={expanded ? 'Collapse message field' : actions.expandLabel}
+              accessibilityState={{ expanded }}
+              className="size-[38px] min-h-0 min-w-0 rounded-full px-0 active:bg-raised"
+              size="content"
+              variant="ghost"
+              style={{ marginBottom: 3 }}
+              // The chat composer expands in place; the terminal keeps its own editor.
+              onPress={() => setExpanded(value => !value)}
+            >
+              {expanded ? <Minimize2 size={16} color={colors.textTertiary} /> : <Maximize2 size={16} color={colors.textTertiary} />}
             </Button>
-          ) : null}
+          </View>
           <Button
             accessibilityLabel={actions.sendLabel}
-            className="size-11 rounded-full bg-primary px-0"
+            accessibilityState={{ disabled: !ready }}
+            className={cn('size-[46px] rounded-full px-0', ready ? 'bg-primary active:bg-primary/90' : 'bg-raised')}
             disabled={actions.sendDisabled}
-            onPress={hapticSend(actions.onSend)}
+            size="content"
+            variant="ghost"
+            onPress={submit}
           >
-            {actions.sending ? <ActivityIndicator size="small" color={colors.onPrimary} /> : <Send size={19} color={colors.onPrimary} />}
+            {actions.sending
+              ? <ActivityIndicator size="small" color={ready ? colors.onPrimary : colors.textSecondary} />
+              : <ArrowUp size={20} strokeWidth={2.4} color={ready ? colors.onPrimary : colors.decor} />}
           </Button>
         </View>
       </View>

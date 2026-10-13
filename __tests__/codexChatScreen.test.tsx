@@ -28,11 +28,17 @@ jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: (_target, name) => String(name) }),
 );
-jest.mock('../src/theme', () => ({ useTheme: () => ({ colors: {} }) }));
+jest.mock('../src/theme', () => ({
+  useTheme: () => ({ colors: {} }),
+  statusTint: (color: string) => color,
+  nightfallShadows: {},
+}));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
-jest.mock('../src/components/app-ui', () => ({ StatusBadge: 'StatusBadge' }));
+jest.mock('../src/components/app-ui', () => ({ PulsingDot: 'PulsingDot' }));
+jest.mock('../src/components/ChatSessionActions', () => ({ ChatHeader: 'ChatHeader', HeaderPill: 'HeaderPill' }));
+jest.mock('../src/components/nightfall', () => ({ BottomSheet: 'BottomSheet', BusySpinner: 'BusySpinner' }));
 jest.mock('../src/components/AgentChatView', () => ({
   AgentChatView: 'AgentChatView',
 }));
@@ -196,4 +202,31 @@ test('multiple agent questions return separate keyed answers', async () => {
   expect(backend.respond).toHaveBeenCalledWith(request, {
     answers: { a: { answers: ['one'] }, b: { answers: ['two'] } },
   });
+});
+test('the Nightfall header names the thread, offers Remote files at its directory and goes back to Chats', async () => {
+  const backend = daemon();
+  const openFile = jest.fn();
+  const back = jest.fn();
+  await act(async () => {
+    renderer = create(
+      <CodexChatScreen
+        hostId="host"
+        threadId="exact"
+        hostName="Server"
+        daemon={backend as unknown as CodexDaemonClient}
+        client={{} as HerdrClient}
+        onOpenFile={openFile}
+        onTerminal={jest.fn()}
+        onConsumeDraft={jest.fn()}
+        onBack={back}
+      />,
+    );
+  });
+  const header = renderer.root.find(n => String(n.type) === 'ChatHeader');
+  expect(header.props).toEqual(expect.objectContaining({ title: 'Exact chat', subtitle: 'codex · Server', path: '/srv/project', status: 'idle' }));
+  header.props.onBack();
+  expect(back).toHaveBeenCalledTimes(1);
+  const files = header.props.options.find((option: { label: string }) => option.label === 'Remote files');
+  act(() => { files.onPress(); });
+  expect(openFile).toHaveBeenCalledWith(undefined, '/srv/project');
 });

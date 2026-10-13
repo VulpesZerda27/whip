@@ -12,7 +12,8 @@ on each saved server and within conversations.
    key/password and Herdr session name as official Whip. Tailscale on the phone
    must be connected if you use Tailnet addresses.
 2. Open **Chats**. Saved servers reconnect automatically. Chats shows Codex and
-   Claude agents currently open in their Herdr sessions; the server chips filter it.
+   Claude agents currently open in their Herdr sessions. The server rail scopes it
+   to one server; each server chip carries a dot for its most urgent agent.
 3. Tap **+**. Choose the server, provider, model and effort. Choose an existing
    Herdr workspace or pick Home (`~`), `~/Projects`, or a project folder fetched
    from that server. The Projects choices appear only when the folder exists.
@@ -123,15 +124,25 @@ durable send queue: pending sends are not replayed automatically after a restart
 Chats sort blocked agents first, then done agents, then working agents, then idle agents.
 Unread completions and recent activity break ties within those groups.
 
-The **Needs you** filter combines blocked agents with unread completions, which
-also have a **New** badge. Opening a chat in the foreground marks its current
-activity seen; responses received while the phone is locked stay unread. Tapping
+The status tiles (**All**, **Need you**, **Working**, **Done**) count and filter
+the queue; tap a tile again, or **Clear**, to show everything. **Need you** is a
+blocked agent; **Done** is an unread completion. Once you have seen a completion
+it reads as **Idle**. Opening a chat in the foreground marks its current
+activity seen; responses received while the phone is locked stay unread. The
+Chats dock icon shows a pink dot when an agent needs you, otherwise a green dot
+for an unread completion. While Reins is open, a heads-up card also drops in when
+a chat you are not viewing starts needing you or finishes; tap it to open that
+chat. System notifications are unchanged. Tapping
 a Codex or Claude notification opens that conversation in chat mode. Notification
 delivery uses the existing notification settings and Android permissions.
 
 On startup, Chats keeps existing rows visible and shows **Syncing chats…** while
 saved servers reconnect. Manage connections in **Servers**; Chats only shows a
 connection problem when loading or automatic retries have actually failed.
+In **Servers**, tapping a saved server connects it in place and offers **Open chats**;
+tapping a connected server, its agent count or its **needs you** chip opens Chats
+scoped to that server. Long-press a server or tap its **⋯** for Connect, Disconnect
+(with **Undo**), Open terminal, Edit and Delete.
 
 Codex completion badges also follow Herdr's seen state on other terminals. Reins
 confirms the receipt against fresh server snapshots and the exact conversation
@@ -145,15 +156,17 @@ locally. No Codex modification or title/directory matching is involved.
 Chat shows **Working**, **Needs you**, or **Offline** status, with **Stop** while
 working and **Reconnect** when offline. Stop interrupts the exact Codex turn;
 Claude retains its existing Escape-based control.
-Claude’s **Conversation options** menu contains **Read aloud** and **Open terminal**;
-Codex exposes those controls in its header.
+The **⋯** conversation options hold **Read aloud**, **Remote files** and **Open terminal**;
+Codex adds **Model and effort**.
 Chat preserves the desktop terminal's width, including when sending messages,
 attachments, or approval answers. It uses the host's control and transcript
 connections without attaching a phone-sized terminal. **Open terminal** attaches
 at the phone's dimensions; returning to Chat releases that attachment so the
 desktop can use its own dimensions again.
-Simple chat has no back arrow or terminal shortcut bar; use the system back gesture.
-A single input row grows as you type, with attachment, voice and send controls.
+The chat header has a back arrow to Chats (the system back gesture also works);
+there is no terminal shortcut bar. A single input row grows as you type, with
+attachment, voice, expand and send controls. **Enter** adds a new line; the send
+button beside the field sends. Expand the field for longer messages.
 Its opaque background extends through the bottom gesture area so scrolled messages
 cannot peek out underneath. Chat keeps the system status bar beside the camera
 cutout, with the title below the top safe area, even with fullscreen terminals enabled.

@@ -4,10 +4,12 @@ import {
   darkColors,
   githubLightPalette,
   lightColors,
+  nightfall,
   resolveTheme,
   sessionTabGlassStyle,
   sessionTabStatusColor,
   statusColor,
+  statusTint,
   terminalColors,
   tokyoNightPalette,
 } from '../src/theme';
@@ -24,8 +26,32 @@ describe('application theme', () => {
     expect(lightColors.surface).toBe('#F6F8FA');
     expect(lightColors.text).toBe('#24292F');
     expect(lightColors.primary).toBe('#0969DA');
-    expect(lightColors.working).toBe(githubLightPalette.green);
+    expect(lightColors.done).toBe(githubLightPalette.green);
     expect(lightColors.blocked).toBe(githubLightPalette.red);
+  });
+
+  test('never lets Working share Done\'s color in either theme', () => {
+    expect(darkColors.working).toBe('#7DCFFF');
+    expect(darkColors.done).toBe('#9ECE6A');
+    expect(lightColors.working).toBe('#1B7C83');
+    for (const palette of [darkColors, lightColors]) {
+      expect(palette.working).not.toBe(palette.done);
+    }
+  });
+
+  test('maps Nightfall tonal layers onto the dark theme', () => {
+    expect(darkColors.card).toBe(nightfall.card);
+    expect(darkColors.sidebar).toBe(nightfall.sunken);
+    expect(darkColors.surface).toBe(nightfall.raised);
+    expect(darkColors.divider).toBe(nightfall.line);
+    // Captions move off the failing #545C7E onto text3.
+    expect(darkColors.textTertiary).toBe('#8089B3');
+  });
+
+  test('builds status tints from six-digit hex colors', () => {
+    expect(statusTint('#F7768E')).toBe('rgba(247,118,142,0.14)');
+    expect(statusTint('#7AA2F7', 0.22)).toBe('rgba(122,162,247,0.22)');
+    expect(statusTint('rgb(1, 2, 3)')).toBe('rgb(1, 2, 3)');
   });
 
   test('uses Tokyo Night for dark controls and the terminal', () => {

@@ -279,7 +279,7 @@ export function RemoteGitDiffPreview({
   return (
     <View className="flex-1 bg-background">
       {onLoadContext ? (
-        <View className="flex-row flex-wrap items-center gap-1 border-b border-border px-2 py-1">
+        <View className="flex-row flex-wrap items-center gap-1 border-b border-line px-2 py-1">
           {CONTEXT_MODES.map(mode => (
             <Button
               key={mode}
@@ -308,7 +308,7 @@ export function RemoteGitDiffPreview({
           {t('files.gitContextError')} {contextError || refreshError}
         </Text>
       ) : null}
-      <View className="min-h-12 flex-row items-center border-b border-border px-3">
+      <View className="min-h-12 flex-row items-center border-b border-line px-3">
         <View
           className="flex-1 flex-row items-center gap-2"
           accessibilityLabel={t(
@@ -365,7 +365,7 @@ export function RemoteGitDiffPreview({
         ) : null}
       </View>
       {onAskAgent ? (
-        <View className="flex-row items-center gap-1 border-b border-border px-2">
+        <View className="flex-row items-center gap-1 border-b border-line px-2">
           {selectionMode ? (
             <>
               <Button
@@ -379,7 +379,7 @@ export function RemoteGitDiffPreview({
               >
                 <X size={18} color={colors.text} />
               </Button>
-              <Text className="flex-1 text-[11px] text-muted-foreground">
+              <Text className="flex-1 text-[12.5px] text-text3">
                 {t(
                   selection
                     ? 'files.gitSelectionExtend'
@@ -387,9 +387,8 @@ export function RemoteGitDiffPreview({
                 )}
               </Text>
               <Button
-                className="h-11 rounded-full px-3"
+                className="h-11 rounded-full px-4"
                 disabled={!selection || contextBusy}
-                variant="secondary"
                 onPress={() => {
                   if (selection)
                     onAskAgent(
@@ -400,8 +399,8 @@ export function RemoteGitDiffPreview({
                     );
                 }}
               >
-                <MessageSquare size={16} color={colors.text} />
-                <Text className="text-[12px]">{t('files.gitAskAgent')}</Text>
+                <MessageSquare size={16} color={colors.onPrimary} />
+                <Text className="text-[13.5px]">{t('files.gitAskAgent')}</Text>
               </Button>
             </>
           ) : (
@@ -412,7 +411,7 @@ export function RemoteGitDiffPreview({
               onPress={() => setSelectionMode(true)}
             >
               <ListChecks size={16} color={colors.text} />
-              <Text className="text-[12px]">{t('files.gitSelectLines')}</Text>
+              <Text className="text-[13px]">{t('files.gitSelectLines')}</Text>
             </Button>
           )}
         </View>

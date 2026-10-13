@@ -37,7 +37,9 @@ describe('host runtime summaries', () => {
     ], 19))).toEqual({
       agentStatus: 'blocked',
       agentTotal: 4,
+      blockedTotal: 1,
       protocol: 19,
+      serverRunning: true,
     });
   });
 
@@ -45,7 +47,9 @@ describe('host runtime summaries', () => {
     expect(hostRuntimeSummary(snapshot([]))).toEqual({
       agentStatus: 'unknown',
       agentTotal: 0,
+      blockedTotal: 0,
       protocol: null,
+      serverRunning: false,
     });
   });
 });

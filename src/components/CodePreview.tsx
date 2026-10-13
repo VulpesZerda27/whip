@@ -50,7 +50,6 @@ function HighlightedCode({
 }: Omit<PreviewProps, 'progressIdentity'> & { contentHeight?: number; contentWidth?: number }) {
   const { isDark } = useTheme();
   const appearance = isDark ? atomOneDarkReasonable : atomOneLight;
-  const background = appearance.hljs.background;
   return (
     <ScrollView
       horizontal
@@ -58,7 +57,8 @@ function HighlightedCode({
       style={contentWidth === undefined ? undefined : { width: contentWidth, height: contentHeight }}
       contentContainerStyle={[
         styles.highlightContent,
-        { backgroundColor: typeof background === 'string' ? background : undefined },
+        // The Nightfall code surface (`sunken`) shows through the syntax theme.
+        { backgroundColor: 'transparent' },
         contentWidth === undefined ? undefined : { width: contentWidth, minHeight: contentHeight },
       ]}>
       <Text selectable style={[styles.codeText, { color: appearance.hljs.color }]}>
@@ -76,7 +76,7 @@ export function CodePreview({ content, filename, initialLine, progressIdentity }
   return (
     <ScrollView
       {...scrollProgress}
-      className="flex-1 bg-background"
+      className="mx-2.5 mb-2.5 flex-1 rounded-[20px] bg-sunken"
       contentContainerStyle={styles.verticalContent}>
       <View style={styles.previewRow}>
         <LineNumberGutter content={content} style={[styles.codeText, styles.previewLineNumbers]} />
@@ -149,7 +149,7 @@ export function CodeEditor({ editable, filename, onChangeText, progressIdentity,
             style={[
               styles.gutter,
               {
-                backgroundColor: colors.surface,
+                backgroundColor: colors.sunken,
                 width: metrics.gutterWidth,
               },
             ]}>

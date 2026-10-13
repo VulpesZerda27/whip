@@ -33,8 +33,6 @@ export const WHIP_MARKDOWN_STREAMING_CONFIG = {
 
 const LOCAL_PATH_LINK_PATTERN = '^(?:file:\\/\\/|\\/|\\.\\.?\\/|~\\/)';
 const COPY_CONFIRMATION_TOP_GAP = 56;
-// OpenCode v2 uses an 8% text-color tint for ordinary inline code.
-const INLINE_CODE_BACKGROUND_ALPHA = '14';
 
 interface Props {
   content: string;
@@ -52,8 +50,9 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
       paragraph: {
         color: colors.text,
         fontFamily: guiFontFamilies.regular,
-        fontSize: 14,
-        lineHeight: 22,
+        // Nightfall chat prose: 15.5 / 1.55.
+        fontSize: variant === 'transcript' ? 15.5 : 14,
+        lineHeight: variant === 'transcript' ? 24 : 22,
         marginBottom: 10,
       },
       h1: {
@@ -126,8 +125,8 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
         markerFontWeight: '600',
         markerMinWidth: 20,
         gapWidth: 7,
-        fontSize: 14,
-        lineHeight: 22,
+        fontSize: variant === 'transcript' ? 15.5 : 14,
+        lineHeight: variant === 'transcript' ? 24 : 22,
         marginBottom: 10,
       },
       link: {
@@ -153,27 +152,28 @@ export function useWhipMarkdownStyle(variant: Props['variant'] = 'default'): Mar
       },
       code: {
         color: colors.text,
-        backgroundColor: colorWithAlpha(colors.text, INLINE_CODE_BACKGROUND_ALPHA),
+        backgroundColor: colors.raised,
         borderColor: 'transparent',
         fontFamily: guiFontFamilies.mono,
       },
+      // Nightfall code surface: `sunken`, no outline.
       codeBlock: {
         color: colors.text,
-        backgroundColor: colors.sidebar,
-        borderColor: colors.divider,
-        borderRadius: variant === 'tool' ? 6 : 10,
-        borderWidth: 1,
+        backgroundColor: colors.sunken,
+        borderColor: 'transparent',
+        borderRadius: variant === 'tool' ? 12 : 16,
+        borderWidth: 0,
         fontFamily: guiFontFamilies.mono,
-        fontSize: variant === 'tool' ? 11 : 12,
-        lineHeight: variant === 'tool' ? 17 : 18,
-        padding: variant === 'tool' ? 12 : 13,
+        fontSize: variant === 'tool' ? 11.5 : 12.5,
+        lineHeight: variant === 'tool' ? 19 : 22,
+        padding: variant === 'tool' ? 12 : 14,
         syntaxColors: {
           attribute: colors.warning,
           comment: colors.textTertiary,
           constant: colors.warning,
           embedded: colors.text,
           function: colors.primary,
-          keyword: colors.primary,
+          keyword: colors.magenta,
           number: colors.warning,
           operator: colors.textSecondary,
           property: colors.textSecondary,

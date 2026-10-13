@@ -31,12 +31,10 @@ import { useTerminalSessions } from './src/hooks/useTerminalSessions';
 
 const guiFontAssets = {
   [chatCjkFontFamily]: chatCjkFontAsset,
-  [guiFontFamilies.regular]: bundledAsset(require('./assets/gui-fonts/Inter-Regular.ttf')),
-  [guiFontFamilies.medium]: bundledAsset(require('./assets/gui-fonts/Inter-Medium.ttf')),
-  [guiFontFamilies.semiBold]: bundledAsset(require('./assets/gui-fonts/Inter-SemiBold.ttf')),
-  [guiFontFamilies.bold]: bundledAsset(require('./assets/gui-fonts/Inter-Bold.ttf')),
-  [guiFontFamilies.extraBold]: bundledAsset(require('./assets/gui-fonts/Inter-ExtraBold.ttf')),
-  [guiFontFamilies.black]: bundledAsset(require('./assets/gui-fonts/Inter-Black.ttf')),
+  [guiFontFamilies.regular]: bundledAsset(require('./assets/gui-fonts/InstrumentSans-Regular.ttf')),
+  [guiFontFamilies.medium]: bundledAsset(require('./assets/gui-fonts/InstrumentSans-Medium.ttf')),
+  [guiFontFamilies.semiBold]: bundledAsset(require('./assets/gui-fonts/InstrumentSans-SemiBold.ttf')),
+  [guiFontFamilies.bold]: bundledAsset(require('./assets/gui-fonts/InstrumentSans-Bold.ttf')),
   [terminalFontFamily]: bundledAsset(require('./assets/terminal-fonts/JetBrainsMono-Regular.ttf')),
 };
 

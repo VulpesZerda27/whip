@@ -1,4 +1,4 @@
-import { RefreshCw, type LucideIcon } from 'lucide-react-native';
+import { Check, ChevronLeft, type LucideIcon } from 'lucide-react-native';
 import {
   createContext,
   useContext,
@@ -10,7 +10,6 @@ import {
   AccessibilityInfo,
   AppState,
   Image,
-  Platform,
   StyleSheet,
   View,
 } from 'react-native';
@@ -22,33 +21,26 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import Svg, { Circle, G, Path, Rect } from 'react-native-svg';
+import Svg, { G, Path, Rect } from 'react-native-svg';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/src/lib/utils';
 import { bundledAsset } from '@/src/lib/bundledAsset';
-import {
-  agentStatusGlyph,
-  statusMotionKind,
-  statusTone,
-} from '@/src/lib/statusMotion';
-import { appGlassControlStyle, colorWithAlpha, useTheme } from '@/src/theme';
+import { statusMotionKind } from '@/src/lib/statusMotion';
+import { nightfallMotion, statusColor, statusTint, useTheme } from '@/src/theme';
 import {
   operationalErrorDetails,
   recordOperationalDiagnostic,
 } from '@/src/services/operationalDiagnostics';
 import { hapticPress } from '../services/interactionFeedback';
-import { GlassSurface, useAppGlassEnabled } from './GlassSurface';
 import { NativeAgentSpinner } from './NativeAgentSpinner';
 import { useDecorativeProgress } from '../hooks/useDecorativeProgress';
-import { useSpinnerFrameRate } from '../hooks/useSpinnerFrameRate';
-import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 
 const ReducedMotionContext = createContext(false);
 const AgentStatusAnimationContext = createContext(true);
-const AGENT_SPINNER_ROTATION_MS = 700;
+const AGENT_SPINNER_ROTATION_MS = nightfallMotion.spinnerTurnMs;
 
 export function ReducedMotionProvider({ children }: { children: ReactNode }) {
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -127,6 +119,21 @@ export function ReinsMark({
   );
 }
 
+/** Single-color “reins” mark used as the Chats dock glyph; tints with the dock state. */
+export function ReinsGlyph({ color, size = 22, strokeWidth = 1.9 }: { color?: string; size?: number; strokeWidth?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M9.4 4.8a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0-5.2 0M12 7.4V10.5M12 10.5c-.6 3.3-5.4 5.4-6.6 10.5M12 10.5c-.2 3.4-2.2 5.8-2.5 10.5M12 10.5c.2 3.4 2.2 5.8 2.5 10.5M12 10.5c.6 3.3 5.4 5.4 6.6 10.5"
+        stroke={color ?? 'currentColor'}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={strokeWidth}
+      />
+    </Svg>
+  );
+}
+
 export function HerdrMark({ size, accessibilityLabel }: { size: number; accessibilityLabel?: string }) {
   return (
     <View
@@ -153,6 +160,9 @@ export function IconButton({
   destructive = false,
   disabled = false,
   selected = false,
+  tone = 'plain',
+  size = 44,
+  iconSize = 21,
 }: {
   icon: LucideIcon;
   accessibilityLabel: string;
@@ -160,74 +170,89 @@ export function IconButton({
   className?: string;
   destructive?: boolean;
   disabled?: boolean;
+  /** Shows the `raised` fill used while the control's panel is open. */
   selected?: boolean;
+  /** `accent` is the single primary action; `raised` and `card` are tonal circles. */
+  tone?: 'plain' | 'raised' | 'card' | 'accent';
+  size?: number;
+  iconSize?: number;
 }) {
   const { colors } = useTheme();
   const IconComponent = icon;
+  const accent = tone === 'accent';
+  const color = destructive ? colors.error : accent ? colors.onPrimary : colors.text;
   return (
     <Button
       accessibilityLabel={accessibilityLabel}
-      className={cn('rounded-full', selected && 'bg-primary', className)}
+      accessibilityState={{ disabled, selected }}
+      className={cn(
+        'rounded-full active:opacity-80',
+        tone === 'raised' && 'bg-raised',
+        tone === 'card' && 'bg-card',
+        accent && 'bg-primary active:bg-primary',
+        selected && !accent && 'bg-raised',
+        className,
+      )}
       disabled={disabled}
-      size="icon"
+      size="content"
+      style={[{ width: size, height: size }, accent ? { boxShadow: ACCENT_BUTTON_SHADOW } : null]}
       variant="ghost"
       onPress={hapticPress(onPress)}>
-      <IconComponent size={21} color={destructive ? colors.error : selected ? colors.onPrimary : colors.text} />
+      <IconComponent size={iconSize} color={color} strokeWidth={accent ? 2.3 : 2} />
     </Button>
   );
 }
 
-export function StatusBadge({ status, label, agentStatus = false, showIndicator = true }: { status: string; label?: string; agentStatus?: boolean; showIndicator?: boolean }) {
-  const { colors } = useTheme();
-  const appGlassEnabled = useAppGlassEnabled();
-  const { t } = useTranslation();
-  const tone = statusTone(status);
-  const indicatorColor = { success: colors.working, destructive: colors.error, warning: colors.warning, muted: colors.textTertiary }[tone];
-  const textClass = { success: 'text-success', destructive: 'text-destructive', warning: 'text-warning', muted: 'text-muted-foreground' }[tone];
-  return (
-    <Badge
-      variant="secondary"
-      className="gap-1.5 px-2.5 py-1"
-      style={appGlassEnabled
-        ? appGlassControlStyle(false, colors)
-        : { borderColor: colors.divider }}>
-      {showIndicator && (agentStatus
-        ? <AnimatedAgentStatusGlyph status={status} color={indicatorColor} size={12} />
-        : <AnimatedStatusIndicator status={status} color={indicatorColor} />)}
-      <Text className={cn('text-xs font-semibold capitalize', textClass)}>{label || t(`status.${status}`, { defaultValue: status })}</Text>
-    </Badge>
-  );
+const ACCENT_BUTTON_SHADOW = [{ offsetX: 0, offsetY: 8, blurRadius: 20, spreadDistance: 0, color: 'rgba(122,162,247,0.25)' }];
+
+export function statusLabelKey(status: string): string {
+  return `status.${status}`;
 }
 
-export function AnimatedStatusIndicator({ status, color, size = 7 }: { status: string; color: string; size?: number }) {
-  const animationsEnabled = useContext(AgentStatusAnimationContext);
-  const { motion, style, reduceMotion } = useStatusMotion(status, true, true, animationsEnabled);
-  const bloomStyle = useStatusBloom(status, reduceMotion, animationsEnabled);
-
-  if (motion === 'spin') {
-    const iconSize = Math.max(11, size);
-    return (
-      <Animated.View style={style}>
-        <RefreshCw size={iconSize} color={color} />
-      </Animated.View>
-    );
-  }
-
-  if (status === 'idle') {
-    return <Animated.View className="rounded-full" style={[{ width: size, height: size, backgroundColor: color }, style]} />;
-  }
-
-  const frameSize = size + 8;
+/** Status pill: the status color on its 14% tint; idle stays neutral. */
+export function StatusBadge({ status, label, className }: { status: string; label?: string; className?: string; agentStatus?: boolean; showIndicator?: boolean }) {
+  const { colors } = useTheme();
+  const { t } = useTranslation();
+  const neutral = status === 'idle' || status === 'unknown' || status === 'disconnected' || status === 'offline';
+  const color = neutral ? colors.textSecondary : statusPillColor(status, colors);
   return (
     <View
-      className="items-center justify-center overflow-hidden rounded-full"
-      style={{ width: frameSize, height: frameSize }}>
-      <Animated.View style={[statusBloomStyle(color, size), bloomStyle]} />
-      <Animated.View className="rounded-full" style={[{ width: size, height: size, backgroundColor: color }, style]} />
+      className={cn('flex-row items-center rounded-lg px-2', className)}
+      style={{ paddingVertical: 3, backgroundColor: neutral ? colors.raised : statusTint(color, 0.14) }}>
+      <Text className="text-xs font-semibold" style={{ color, lineHeight: 15 }} numberOfLines={1}>
+        {label || t(statusLabelKey(status), { defaultValue: status })}
+      </Text>
     </View>
   );
 }
 
+function statusPillColor(status: string, colors: ReturnType<typeof useTheme>['colors']): string {
+  if (status === 'connected' || status === 'active') return colors.done;
+  if (status === 'connecting' || status === 'reconnecting' || status === 'syncing' || status === 'running') return colors.working;
+  if (status === 'error' || status === 'failed') return colors.blocked;
+  if (status === 'waiting') return colors.warning;
+  return statusColor(status, colors);
+}
+
+/** Small status dot (host rail, session tabs, dock badge). */
+export function StatusDot({ color, size = 8, ring }: { color: string; size?: number; ring?: string }) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: color,
+        ...(ring ? { borderWidth: 2, borderColor: ring, width: size + 4, height: size + 4, borderRadius: (size + 4) / 2 } : null),
+      }}
+    />
+  );
+}
+
+/**
+ * Nightfall agent glyphs: working = ring spinner, blocked = dot with a
+ * pulsing ring, done = check, idle/unknown = hollow ring.
+ */
 export function AnimatedAgentStatusGlyph({
   status,
   color,
@@ -239,54 +264,79 @@ export function AnimatedAgentStatusGlyph({
 }) {
   const reduceMotion = useReducedMotion();
   const animationsEnabled = useContext(AgentStatusAnimationContext);
-  const spins = status === 'working' || status === 'running';
-  const { style } = useStatusMotion(status, false, false, animationsEnabled);
-  const glyphBoxSize = size + 4;
-  return (
-    <Animated.View className="items-center justify-center" style={[{ width: glyphBoxSize, height: glyphBoxSize }, style]}>
-      {spins ? (
+  const spins = statusMotionKind(status) === 'spin';
+  const box = { width: size, height: size };
+  if (spins) {
+    const ring = Math.round(size * 16 / 18);
+    return (
+      <View className="items-center justify-center" style={box}>
         <NativeAgentSpinner
           color={color}
           durationMs={AGENT_SPINNER_ROTATION_MS}
           enabled={animationsEnabled && !reduceMotion}
-          size={size}
+          size={ring}
         />
-      ) : status === 'blocked' ? (
-        <BlockedAgentStatusGlyph color={color} size={size * 1.1} />
-      ) : (
-        <Text
-          className="text-center"
-          style={[
-            styles.statusGlyphText,
-            Platform.OS === 'android' && styles.statusGlyphTextAndroid,
-            { color, fontSize: size, lineHeight: glyphBoxSize },
-          ]}
-        >
-          {agentStatusGlyph(status)}
-        </Text>
-      )}
-    </Animated.View>
-  );
-}
-
-function BlockedAgentStatusGlyph({ color, size }: { color: string; size: number }) {
+      </View>
+    );
+  }
+  if (status === 'blocked' || status === 'waiting') {
+    return (
+      <View className="items-center justify-center" style={box}>
+        <PulsingDot color={color} size={Math.max(6, Math.round(size * 10 / 18))} animate={animationsEnabled && !reduceMotion} />
+      </View>
+    );
+  }
+  if (status === 'done') {
+    return (
+      <View className="items-center justify-center" style={box}>
+        <Check color={color} size={size} strokeWidth={2.4} />
+      </View>
+    );
+  }
+  const ringSize = Math.max(6, Math.round(size * 10 / 18));
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={10} fill="none" stroke={color} strokeWidth={2.5} />
-      <Circle cx={12} cy={12} r={3.5} fill={color} />
-    </Svg>
+    <View className="items-center justify-center" style={box}>
+      <View style={{ width: ringSize, height: ringSize, borderRadius: ringSize / 2, borderWidth: 2, borderColor: color }} />
+    </View>
   );
 }
 
+/** Solid dot whose ring grows 0→8 px and fades, 1.8 s. Static under reduced motion. */
+export function PulsingDot({ color, size = 10, animate = true }: { color: string; size?: number; animate?: boolean }) {
+  const reduceMotion = useReducedMotion();
+  const animationsEnabled = useContext(AgentStatusAnimationContext);
+  const enabled = animate && animationsEnabled && !reduceMotion;
+  const progress = useDecorativeProgress(enabled, nightfallMotion.pulseMs, false);
+  const ringStyle = useAnimatedStyle(() => {
+    const phase = enabled ? progress.value : 1;
+    // CSS keyframes: grow over the first 70%, then rest.
+    const grow = Math.min(1, phase / 0.7);
+    return {
+      opacity: enabled ? 0.6 * (1 - grow) : 0,
+      transform: [{ scale: 1 + (grow * 16) / size }],
+    };
+  }, [enabled, size]);
+  return (
+    <View style={{ width: size, height: size }}>
+      <Animated.View
+        pointerEvents="none"
+        style={[{ position: 'absolute', width: size, height: size, borderRadius: size / 2, backgroundColor: color }, ringStyle]}
+      />
+      <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color }} />
+    </View>
+  );
+}
+
+/** 40 px status medallion: the glyph on its status tint (idle sits on `raised`). */
 export function AgentStatusMedallion({
   accessibilityLabel,
   status,
   color,
-  connected = false,
   icon: IconComponent,
   children,
-  size = 44,
-  glyphSize = 24,
+  size = 40,
+  glyphSize = 18,
+  tint,
 }: {
   accessibilityLabel: string;
   status: string;
@@ -296,42 +346,24 @@ export function AgentStatusMedallion({
   children?: ReactNode;
   size?: number;
   glyphSize?: number;
+  tint?: string;
 }) {
-  const reduceMotion = useReducedMotion();
-  const animationsEnabled = useContext(AgentStatusAnimationContext);
-  const bloomStyle = useConnectedHostBloom(connected, reduceMotion, animationsEnabled);
-  const bloomSize = size + 4;
-  const glyph = () => children || (IconComponent
-    ? <IconComponent color={color} size={glyphSize} strokeWidth={2.25} />
-    : <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />);
+  const { colors } = useTheme();
+  const neutral = status === 'idle' || status === 'unknown';
   return (
     <View
       accessible
       accessibilityLabel={accessibilityLabel}
-      className="items-center justify-center"
-      style={{ width: bloomSize, height: bloomSize }}>
-      {connected ? (
-        <Animated.View
-          pointerEvents="none"
-          className="absolute rounded-full"
-          style={[statusBloomStyle(color, bloomSize), bloomStyle]}
-        />
-      ) : null}
-      <GlassSurface
-        className="items-center justify-center rounded-full border"
-        intensity={28}
-        style={{
-          width: size,
-          height: size,
-          borderColor: colorWithAlpha(color, '8F'),
-        }}>
-        {glyph()}
-      </GlassSurface>
+      className="items-center justify-center rounded-full"
+      style={{ width: size, height: size, backgroundColor: tint ?? (neutral ? colors.raised : statusTint(color, 0.14)) }}>
+      {children || (IconComponent
+        ? <IconComponent color={color} size={glyphSize} strokeWidth={2} />
+        : <AnimatedAgentStatusGlyph status={status} color={color} size={glyphSize} />)}
     </View>
   );
 }
 
-export function AnimatedEntrance({ children, delay = 0, className }: { children: ReactNode; delay?: number; className?: string }) {
+export function AnimatedEntrance({ children, delay = 0, className, distance = 10 }: { children: ReactNode; delay?: number; className?: string; distance?: number }) {
   const reduceMotion = useReducedMotion();
   const progress = useSharedValue(reduceMotion ? 1 : 0);
 
@@ -342,15 +374,15 @@ export function AnimatedEntrance({ children, delay = 0, className }: { children:
       return;
     }
     progress.value = withDelay(delay, withTiming(1, {
-      duration: 220,
-      easing: Easing.out(Easing.cubic),
+      duration: nightfallMotion.screenEnter.duration,
+      easing: Easing.bezier(...nightfallMotion.easing),
     }));
     return () => cancelAnimation(progress);
   }, [delay, progress, reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     opacity: progress.value,
-    transform: [{ translateY: 8 * (1 - progress.value) }],
+    transform: [{ translateY: distance * (1 - progress.value) }],
   }));
 
   return (
@@ -362,109 +394,30 @@ export function AnimatedEntrance({ children, delay = 0, className }: { children:
   );
 }
 
-function useStatusMotion(
-  status: string,
-  rotateSpinning = true,
-  scalePulsing = true,
-  animationsEnabled = true,
-) {
-  const motion = statusMotionKind(status);
-  const reduceMotion = useReducedMotion();
-  const spinnerFrameRate = useSpinnerFrameRate();
-  const progress = useDecorativeProgress(
-    animationsEnabled && !reduceMotion && motion !== 'static' && (motion !== 'spin' || rotateSpinning),
-    motion === 'spin' ? 900 : 700,
-    motion !== 'spin',
-    motion === 'spin' ? spinnerFrameRate : undefined,
-  );
-
-  const style = useAnimatedStyle(() => {
-    if (motion === 'spin' && rotateSpinning) {
-      return {
-        opacity: 1,
-        transform: [{ rotate: `${progress.value * 360}deg` }],
-      };
-    }
-    if (motion === 'pulse') {
-      return {
-        opacity: 1 - (progress.value * 0.45),
-        transform: [{ scale: scalePulsing ? 1 - (progress.value * 0.18) : 1 }],
-      };
-    }
-    return { opacity: 1, transform: [{ scale: 1 }] };
-  }, [motion, rotateSpinning, scalePulsing]);
-  return { motion, style, reduceMotion };
-}
-
 export function useReducedMotion() {
   return useContext(ReducedMotionContext);
 }
 
-function useStatusBloom(status: string, reduceMotion: boolean, animationsEnabled: boolean) {
-  const breathes = ['done', 'connected', 'active'].includes(status);
-  const progress = useDecorativeProgress(animationsEnabled && breathes && !reduceMotion, 1100);
-
-  return useAnimatedStyle(() => {
-    if (!animationsEnabled || !breathes || reduceMotion) {
-      return { opacity: 0.62, transform: [{ scale: 1 }] };
-    }
-    return {
-      opacity: 0.42 + (progress.value * 0.4),
-      transform: [{ scale: 0.78 + (progress.value * 0.3) }],
-    };
-  }, [animationsEnabled, breathes, reduceMotion]);
-}
-
-function useConnectedHostBloom(connected: boolean, reduceMotion: boolean, animationsEnabled: boolean) {
-  const progress = useDecorativeProgress(animationsEnabled && connected && !reduceMotion, 1400);
-
-  return useAnimatedStyle(() => ({
-    opacity: !animationsEnabled || reduceMotion ? 0.62 : 0.32 + (progress.value * 0.5),
-    transform: [{ scale: !animationsEnabled || reduceMotion ? 1 : 0.9 + (progress.value * 0.16) }],
-  }), [animationsEnabled, reduceMotion]);
-}
-
-function statusBloomStyle(color: string, size: number) {
-  return {
-    position: 'absolute',
-    width: size,
-    height: size,
-    borderRadius: size / 2,
-    backgroundColor: colorWithAlpha(color, '38'),
-    boxShadow: [
-      {
-        offsetX: 0,
-        offsetY: 0,
-        blurRadius: Math.max(3, size * 0.5),
-        spreadDistance: 0,
-        color: colorWithAlpha(color, 'A3'),
-      },
-    ],
-  } as const;
-}
-
-export function ScreenHeader({ title, subtitle, left, right }: { title: string; subtitle?: string; left?: ReactNode; right?: ReactNode }) {
+/** Nightfall app bar for pushed routes: back 44 · title 17/600 · optional mono subtitle. */
+export function ScreenHeader({ title, subtitle, left, right, monoSubtitle = false }: { title: string; subtitle?: string; left?: ReactNode; right?: ReactNode; monoSubtitle?: boolean }) {
   return (
-    <GlassSurface className="min-h-16 flex-row items-center border-b border-white/30 px-4 py-2 dark:border-white/10">
-      {left ? <View className="mr-2 min-w-10">{left}</View> : null}
+    <View className="min-h-[62px] flex-row items-center bg-background px-2 py-1">
+      {left ? <View className="mr-1">{left}</View> : <View className="w-2" />}
       <View className="min-w-0 flex-1">
-        <Text className="text-[17px] font-semibold leading-6" numberOfLines={1}>{title}</Text>
-        {subtitle ? <Text className="text-xs leading-4 text-muted-foreground" numberOfLines={1}>{subtitle}</Text> : null}
+        <Text className="text-[17px] font-semibold leading-[22px]" numberOfLines={1}>{title}</Text>
+        {subtitle ? <Text className={cn('text-xs leading-4 text-text3', monoSubtitle && 'font-mono')} numberOfLines={1}>{subtitle}</Text> : null}
       </View>
-      {right ? <View className="ml-2 min-w-10 items-end">{right}</View> : null}
-    </GlassSurface>
+      {right ? <View className="ml-1 flex-row items-center">{right}</View> : null}
+    </View>
   );
+}
+
+export function BackButton({ accessibilityLabel, onPress }: { accessibilityLabel: string; onPress: () => void }) {
+  return <IconButton icon={ChevronLeft} iconSize={22} accessibilityLabel={accessibilityLabel} onPress={onPress} />;
 }
 
 const styles = StyleSheet.create({
   herdrMark: {
     overflow: 'hidden',
-  },
-  statusGlyphText: {
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  statusGlyphTextAndroid: {
-    transform: [{ translateY: -1 }],
   },
 });

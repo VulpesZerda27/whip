@@ -3,11 +3,13 @@ import UIKit
 
 public final class WhipAgentSpinnerView: ExpoView {
   private static let animationKey = "whip-agent-spinner-rotation"
-  private static let trailOpacities: [CGFloat] = [1, 0.72, 0.5, 0.32, 0.16]
-  private static let positionCount = 10
+  private static let strokeRatio: CGFloat = 2 / 16
+  private static let trackOpacity: CGFloat = 0.22
+  private static let arcSweep = CGFloat.pi / 2
 
   private let spinnerLayer = CALayer()
-  private let dotLayers = trailOpacities.map { _ in CAShapeLayer() }
+  private let trackLayer = CAShapeLayer()
+  private let arcLayer = CAShapeLayer()
   private var animationEnabled = true
   private var rotationDuration = 0.7
   private var framesPerSecond: Float = 30
@@ -18,13 +20,17 @@ public final class WhipAgentSpinnerView: ExpoView {
     backgroundColor = .clear
     isUserInteractionEnabled = false
     layer.addSublayer(spinnerLayer)
-    dotLayers.forEach { spinnerLayer.addSublayer($0) }
+    for shape in [trackLayer, arcLayer] {
+      shape.fillColor = UIColor.clear.cgColor
+      shape.lineCap = .round
+      spinnerLayer.addSublayer(shape)
+    }
   }
 
   public override func layoutSubviews() {
     super.layoutSubviews()
     spinnerLayer.frame = bounds
-    layoutDots()
+    layoutRing()
   }
 
   public override func didMoveToWindow() {
@@ -34,7 +40,7 @@ public final class WhipAgentSpinnerView: ExpoView {
 
   public func setSpinnerColor(_ color: UIColor) {
     spinnerColor = color
-    updateDotColors()
+    updateRingColors()
   }
 
   public func setRotationDuration(_ durationMs: Double) {
@@ -61,38 +67,32 @@ public final class WhipAgentSpinnerView: ExpoView {
     }
   }
 
-  private func layoutDots() {
+  private func layoutRing() {
     let extent = min(bounds.width, bounds.height)
     guard extent > 0 else { return }
 
+    // Nightfall ring: a faint full track with one rotating quarter arc.
+    let lineWidth = extent * Self.strokeRatio
     let center = CGPoint(x: bounds.midX, y: bounds.midY)
-    let orbitRadius = extent * 9.5 / 24
-    let dotRadius = extent * 2 / 24
-
-    for (index, dotLayer) in dotLayers.enumerated() {
-      let angle = -CGFloat.pi / 2 - CGFloat(index) * 2 * CGFloat.pi / CGFloat(Self.positionCount)
-      let dotCenter = CGPoint(
-        x: center.x + cos(angle) * orbitRadius,
-        y: center.y + sin(angle) * orbitRadius
-      )
-      dotLayer.path = UIBezierPath(
-        ovalIn: CGRect(
-          x: dotCenter.x - dotRadius,
-          y: dotCenter.y - dotRadius,
-          width: dotRadius * 2,
-          height: dotRadius * 2
-        )
-      ).cgPath
-    }
-    updateDotColors()
+    let radius = (extent - lineWidth) / 2
+    trackLayer.path = UIBezierPath(
+      arcCenter: center, radius: radius, startAngle: 0, endAngle: 2 * CGFloat.pi, clockwise: true
+    ).cgPath
+    arcLayer.path = UIBezierPath(
+      arcCenter: center,
+      radius: radius,
+      startAngle: -CGFloat.pi / 2 - Self.arcSweep / 2,
+      endAngle: -CGFloat.pi / 2 + Self.arcSweep / 2,
+      clockwise: true
+    ).cgPath
+    trackLayer.lineWidth = lineWidth
+    arcLayer.lineWidth = lineWidth
+    updateRingColors()
   }
 
-  private func updateDotColors() {
-    for (index, dotLayer) in dotLayers.enumerated() {
-      dotLayer.fillColor = spinnerColor
-        .withAlphaComponent(Self.trailOpacities[index])
-        .cgColor
-    }
+  private func updateRingColors() {
+    trackLayer.strokeColor = spinnerColor.withAlphaComponent(Self.trackOpacity).cgColor
+    arcLayer.strokeColor = spinnerColor.cgColor
   }
 
   private func updateAnimationState() {

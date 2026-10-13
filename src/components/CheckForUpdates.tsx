@@ -58,7 +58,8 @@ export function CheckForUpdates({ installedVersion }: { installedVersion: string
         accessibilityLabel={t('about.checkUpdates')}
         accessibilityState={{ busy: checking, disabled: checking }}
         disabled={checking}
-        variant="outline"
+        className="rounded-full px-5"
+        variant="secondary"
         onPress={hapticPress(check)}>
         {checking ? <ActivityIndicator size="small" /> : <Icon as={RefreshCw} size={16} />}
         <Text>{t(checking ? 'about.checkingUpdates' : 'about.checkUpdates')}</Text>

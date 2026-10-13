@@ -57,7 +57,15 @@ jest.mock('react-i18next', () => ({
 }));
 jest.mock('../src/components/app-ui', () => ({
   AnimatedAgentStatusGlyph: 'AgentGlyph',
+  StatusBadge: 'StatusBadge',
+  PulsingDot: 'PulsingDot',
   hapticPress: (fn: unknown) => fn,
+}));
+jest.mock('../src/components/nightfall', () => ({
+  BusySpinner: 'BusySpinner',
+  BottomSheet: 'BottomSheet',
+  ListGroup: 'ListGroup',
+  ListRow: 'ListRow',
 }));
 jest.mock('../src/components/GlassSurface', () => ({
   useAppGlassEnabled: () => false,

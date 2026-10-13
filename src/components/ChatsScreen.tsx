@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Modal,
   ScrollView,
@@ -9,7 +8,7 @@ import {
   Keyboard,
   Platform,
 } from 'react-native';
-import { MessageCircle, Plus, Star, X } from 'lucide-react-native';
+import { Bot, Check, ChevronRight, CircleAlert, FolderOpen, Plus, RefreshCw, Search, Star, SquareTerminal, Wrench, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SessionRuntimeController } from '../hooks/useSessionRuntimeManager';
@@ -17,7 +16,6 @@ import { hostDisplayName } from '../lib/hostProfiles';
 import { bottomNavigationInset } from '../lib/floatingChrome';
 import {
   chatLaunchIntent,
-  isChatProvider,
   type ChatEffort,
 } from '../lib/chatLaunch';
 import { sessionSnapshot } from '../liveHostSessions';
@@ -27,14 +25,15 @@ import {
   saveChatLaunchPreferences,
 } from '../services/chatLaunchPreferences';
 import { reportBackgroundFailure } from '../services/backgroundOperations';
-import type { HostProfile, AgentInfo } from '../types';
+import type { HostProfile } from '../types';
 import type { CodexHost } from '../hooks/useCodexHosts';
-import { codexChatKey, type CodexThread } from '../services/codexDaemon';
-import { useTheme } from '../theme';
+import { cn } from '../lib/utils';
+import { nightfallShadows, statusColor, statusTint, useTheme } from '../theme';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
-import { StatusBadge } from './app-ui';
+import { AgentStatusMedallion } from './app-ui';
+import { ActionButton, BusySpinner, ListGroup, SectionLabel, SegmentedControl } from './nightfall';
 import type { ChatLibraryController } from '../hooks/useChatLibrary';
 import {
   chatKey,
@@ -42,10 +41,23 @@ import {
   type ChatFavorite,
   type ChatTarget,
 } from '../services/chatLibrary';
-import { codexNeedsAttention, herdrCodexThreadId } from '../lib/codexInbox';
 import { chatSyncState } from '../lib/chatSync';
-import { chatNeedsAttention } from '../lib/chatInbox';
-import { chatStatusPriority } from '../lib/chatInbox';
+import { shortHomePath } from '../lib/paths';
+import {
+  buildChatRows,
+  chatRowNeedsAttention,
+  chatRowStatus,
+  chatRowTitle,
+  chatRowUpdatedAt,
+  chatStatusCounts,
+  formatRelativeShort,
+  hostChatDotStatus,
+  matchesChatSearch,
+  matchesChatStatusFilter,
+  sortChatRows,
+  type ChatRow,
+  type ChatStatusFilter,
+} from '../lib/chatList';
 import { fetchChatCatalog, type ChatModelOption } from '../services/chatCatalog';
 import { fetchChatDirectories, type ChatDirectoryOption } from '../services/chatDirectories';
 import {
@@ -54,7 +66,15 @@ import {
   type ChatReadiness,
 } from '../services/chatReadiness';
 
+/** Opens Chats scoped to one server (and optionally a status), e.g. from Servers. */
+export interface ChatsScopeRequest {
+  hostId: string;
+  status: ChatStatusFilter;
+  nonce: number;
+}
+
 interface Props {
+  scopeRequest?: ChatsScopeRequest | null;
   hosts: HostProfile[];
   sessions: SessionRuntimeController;
   onManageHosts: () => void;
@@ -76,6 +96,7 @@ export function ChatsScreen({
   openError,
   codexHosts,
   onOpenCodex,
+  scopeRequest,
 }: Props) {
   const { colors } = useTheme();
   const { bottom } = useSafeAreaInsets();
@@ -92,7 +113,9 @@ export function ChatsScreen({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const [needsYouOnly, setNeedsYouOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<ChatStatusFilter>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [readiness, setReadiness] = useState<ChatReadiness | null>(null);
   const [readinessError, setReadinessError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -106,6 +129,15 @@ export function ChatsScreen({
   const [favoriteSaved, setFavoriteSaved] = useState(false);
   const [selectedFavorite, setSelectedFavorite] = useState<string | null>(null);
   const saved = library?.value ?? emptyChatLibrary;
+  const appliedScope = useRef(0);
+  useEffect(() => {
+    if (!scopeRequest || scopeRequest.nonce === appliedScope.current) return;
+    appliedScope.current = scopeRequest.nonce;
+    setFilter(scopeRequest.hostId);
+    setStatusFilter(scopeRequest.status);
+    setSearchOpen(false);
+    setQuery('');
+  }, [scopeRequest]);
   const syncStates = sessions.presentationSessions
     .filter(item => !filter || item.hostId === filter)
     .map(item => ({
@@ -139,62 +171,17 @@ export function ChatsScreen({
     workspaceSelection?.hostId === host?.id
       ? (workspaceSelection?.workspaceId ?? '')
       : (workspaces[0]?.workspace_id ?? '');
-  // Herdr owns list membership; the daemon supplies the exact conversation's
-  // contents and activity. Saved daemon history alone never creates a row.
-  const allAgents: {session: (typeof sessions.presentationSessions)[number]; agent: AgentInfo; thread?: CodexThread; attention?: boolean; terminalOnly?: boolean}[] = [];
-  for (const live of sessions.presentationSessions) {
-    if (filter && live.hostId !== filter) continue;
-    const codex = codexHosts?.find(item => item.sessionId === live.id);
-    const listed = new Set<string>();
-    for (const agent of live.snapshot.agents) {
-      if (!isChatProvider(agent.agent)) continue;
-      if (agent.agent !== 'codex' || !codexHosts) {
-        allAgents.push({ session: live, agent });
-        continue;
-      }
-      const id = herdrCodexThreadId(agent);
-      if (!id) {
-        allAgents.push({ session: live, agent, terminalOnly: true });
-        continue;
-      }
-      if (listed.has(id)) continue;
-      listed.add(id);
-      const known = codex?.snapshot.threads.find(thread => thread.id === id);
-      const thread: CodexThread = known ?? {
-        id,
-        name: live.snapshot.tabs?.find(tab => tab.tab_id === agent.tab_id)?.label || 'Codex',
-        cwd: agent.cwd || '',
-        updatedAt: 0,
-        status: agent.agent_status === 'unknown' ? 'idle' : agent.agent_status,
-      };
-      const activity = saved.activity[chatKey(live.hostId, codexChatKey(id))];
-      const pending = codex?.snapshot.requests.some(r => r.params.threadId === id && r.params.isBlocking !== false) ?? false;
-      const attention = known ? codexNeedsAttention(thread, pending, activity) : chatNeedsAttention(agent, saved.activity[chatKey(live.hostId, agent.pane_id)]);
-      const status = pending ? 'blocked'
-        : thread.status === 'idle' || thread.status === 'done'
-          ? attention ? 'done' : 'idle'
-          : thread.status;
-      allAgents.push({session: live, thread, attention, agent: { ...agent, pane_id: codexChatKey(id), agent_status: status }});
-    }
-  }
-  const needsAttention = ({session: item, agent, attention}: (typeof allAgents)[number]) => attention ?? chatNeedsAttention(agent, saved.activity[chatKey(item.hostId, agent.pane_id)]);
-  const needsYouCount = allAgents.filter(needsAttention).length;
-  const agents = allAgents
-    .filter(
-      item => !needsYouOnly || needsAttention(item),
-    )
-    .sort((a, b) => {
-      const aActivity =
-        saved.activity[chatKey(a.session.hostId, a.agent.pane_id)];
-      const bActivity =
-        saved.activity[chatKey(b.session.hostId, b.agent.pane_id)];
-      return (
-        chatStatusPriority(a.agent.agent_status) - chatStatusPriority(b.agent.agent_status) ||
-        Number(needsAttention(b)) -
-          Number(needsAttention(a)) ||
-        (b.thread ? b.thread.updatedAt * 1000 : bActivity?.updatedAt ?? 0) - (a.thread ? a.thread.updatedAt * 1000 : aActivity?.updatedAt ?? 0)
-      );
-    });
+  const allServerRows = buildChatRows(sessions.presentationSessions, codexHosts, saved.activity);
+  const scopedRows = filter ? allServerRows.filter(row => row.session.hostId === filter) : allServerRows;
+  const counts = chatStatusCounts(scopedRows, saved.activity);
+  const rowTitle = chatRowTitle;
+  const agents = sortChatRows(
+    scopedRows.filter(row =>
+      matchesChatStatusFilter(chatRowStatus(row, saved.activity), statusFilter) &&
+      matchesChatSearch(row, rowTitle(row), searchOpen ? query : ''),
+    ),
+    saved.activity,
+  );
   const native =
     session?.connectionStatus === 'ready'
       ? sessions.getClient?.(session.id)?.native
@@ -467,207 +454,285 @@ export function ChatsScreen({
     setCreating(true);
   };
 
+  const scopedSession = filter ? sessions.presentationSessions.find(item => item.hostId === filter) : undefined;
+  const scopedHost = filter ? hosts.find(item => item.id === filter) : undefined;
+  const connectedCount = sessions.presentationSessions.filter(item => item.connectionStatus === 'ready').length;
+  const caption = scopedHost
+    ? `${hostDisplayName(scopedHost)} · ${scopedSession?.connectionStatus === 'ready'
+      ? scopedSession.snapshot.server.protocol != null ? `Herdr P${scopedSession.snapshot.server.protocol}` : 'Connected'
+      : scopedSession?.connectionStatus === 'error' ? 'Connection lost'
+        : scopedSession && scopedSession.connectionStatus !== 'disconnected' ? 'Connecting…' : 'Offline'}`
+    : `All servers · ${connectedCount} connected`;
+  const mergedQueue = !filter && new Set(scopedRows.map(row => row.session.hostId)).size > 1;
+  const startNewAgent = () => {
+    setError(null);
+    setFavoriteSaved(false);
+    setSelectedFavorite(null);
+    if (filter) setPreferences(current => ({ ...current, hostId: filter }));
+    setCreating(true);
+  };
+  const searching = searchOpen && query.trim().length > 0;
+  const statusFilterLabel = { blocked: 'need you', working: 'working', done: 'done' } as const;
+
   return (
     <View className="flex-1">
-      <View className="flex-row items-center justify-between px-5 pb-4 pt-5">
-        <View>
-          <Text className="text-3xl font-bold">Chats</Text>
-          <Text className="mt-1 text-sm text-muted-foreground">
-            Your agents, wherever you are.
-          </Text>
-        </View>
-        <Button
-          accessibilityLabel="New agent"
-          disabled={!loaded || busy}
-          className="size-12 rounded-full"
-          onPress={() => {
-            setError(null);
-            setFavoriteSaved(false);
-            setSelectedFavorite(null);
-            setCreating(true);
-          }}
-        >
-          <Plus color={colors.onPrimary} size={22} />
-        </Button>
-      </View>
-      <View className="px-5 pb-3">
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingBottom: bottomNavigationInset(bottom) }}
+        className="flex-1"
+      >
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-2"
+          contentContainerClassName="gap-2 px-4 pb-0.5 pt-3"
         >
-          <Choice
-            label={`Needs you (${needsYouCount})`}
-            selected={needsYouOnly}
-            onPress={() => setNeedsYouOnly(value => !value)}
-          />
-          <Choice
+          <RailChip
             label="All servers"
+            count={allServerRows.length}
             selected={filter === null}
-            onPress={() => setFilter(null)}
+            onPress={() => {
+              setFilter(null);
+              setStatusFilter(null);
+            }}
           />
-          {hosts.map(item => (
-            <Choice
-              key={item.id}
-              label={hostDisplayName(item)}
-              selected={filter === item.id}
-              onPress={() => setFilter(item.id)}
-            />
-          ))}
+          {hosts.map(item => {
+            const live = sessions.presentationSessions.find(entry => entry.hostId === item.id);
+            const hostRows = allServerRows.filter(row => row.session.hostId === item.id);
+            const dot = hostChatDotStatus(live, hostRows, saved.activity);
+            return (
+              <RailChip
+                key={item.id}
+                label={hostDisplayName(item)}
+                count={hostRows.length}
+                dotColor={dot ? (dot === 'warning' ? colors.warning : statusColor(dot, colors)) : undefined}
+                selected={filter === item.id}
+                onPress={() => {
+                  setFilter(item.id);
+                  setStatusFilter(null);
+                }}
+              />
+            );
+          })}
         </ScrollView>
-      </View>
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: bottomNavigationInset(bottom) }}
-        className="flex-1 px-5"
-      >
-        {library?.error || openError ? (
-          <Text
-            accessibilityRole="alert"
-            className="mb-3 text-sm text-destructive"
+        <View className="flex-row items-end gap-2 pl-5 pr-4 pt-[22px]">
+          <View className="min-w-0 flex-1">
+            <Text className="text-[13px] font-medium leading-[18px] text-text3" numberOfLines={1}>
+              {caption}
+            </Text>
+            <Text
+              accessibilityRole="header"
+              className="text-[32px] font-semibold leading-[34px]"
+              style={{ letterSpacing: -0.96 }}
+            >
+              Chats
+            </Text>
+          </View>
+          <Button
+            accessibilityLabel={searchOpen ? 'Close search' : 'Search chats'}
+            accessibilityState={{ expanded: searchOpen }}
+            className={cn('size-11 rounded-full', searchOpen ? 'bg-raised' : 'bg-card')}
+            size="content"
+            variant="ghost"
+            onPress={() => {
+              setSearchOpen(open => !open);
+              setQuery('');
+            }}
           >
-            {library?.error || openError}
-          </Text>
+            <Search color={colors.text} size={19} strokeWidth={2} />
+          </Button>
+          <Button
+            accessibilityLabel="New agent"
+            disabled={!loaded || busy}
+            className="size-11 rounded-full"
+            size="content"
+            style={{ boxShadow: nightfallShadows.accentButton }}
+            onPress={startNewAgent}
+          >
+            <Plus color={colors.onPrimary} size={20} strokeWidth={2.3} />
+          </Button>
+        </View>
+        {searchOpen ? (
+          <View className="mx-4 mt-3 h-[50px] flex-row items-center gap-2 rounded-[17px] bg-card pl-3.5 pr-1" style={{ borderWidth: 1.5, borderColor: `${colors.primary}80` }}>
+            <Search color={colors.textTertiary} size={18} />
+            <Input
+              accessibilityLabel="Search chats"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+              className="h-11 flex-1 border-0 bg-transparent px-0"
+              placeholder="Chat, agent or folder"
+              value={query}
+              onChangeText={setQuery}
+            />
+          </View>
         ) : null}
-        {saved.favorites.length > 0 ? (
-          <View className="mb-5 gap-2">
-            <Text className="text-sm font-semibold">Favorite projects</Text>
-            {saved.favorites.map(favorite => (
-              <View key={favorite.id} className="flex-row items-center gap-2">
-                <Button
-                  disabled={busy}
-                  variant="outline"
-                  className="h-auto min-w-0 flex-1 flex-col items-start rounded-2xl p-4"
-                  accessibilityLabel={`Start favorite ${favorite.label}`}
-                  onPress={() => openFavorite(favorite)}
-                >
-                  <Text className="font-semibold" numberOfLines={1}>
-                    {favorite.label}
-                  </Text>
-                  <Text
-                    className="text-xs text-muted-foreground"
-                    numberOfLines={1}
-                  >
-                    {serverLabel(favorite.hostId)} · {favorite.provider} ·{' '}
-                    {favorite.model || 'Default model'} · {favorite.effort}
-                  </Text>
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  accessibilityLabel={`Remove favorite ${favorite.label}`}
-                  onPress={() =>
-                    library?.update(previous => ({
-                      ...previous,
-                      favorites: previous.favorites.filter(
-                        item => item.id !== favorite.id,
-                      ),
-                    }))
-                  }
-                >
-                  <X size={18} color={colors.textSecondary} />
-                </Button>
-              </View>
+        <View className="px-4">
+          {library?.error || openError ? (
+            <Banner tone="bad" message={library?.error || openError || ''} />
+          ) : null}
+          {error && !creating ? <Banner tone="bad" message={error} /> : null}
+          <View className="mt-4 flex-row gap-2">
+            {([
+              { key: null, label: 'All', count: counts.all },
+              { key: 'blocked', label: 'Need you', count: counts.blocked },
+              { key: 'working', label: 'Working', count: counts.working },
+              { key: 'done', label: 'Done', count: counts.done },
+            ] as const).map(tile => (
+              <StatusTile
+                key={tile.label}
+                count={tile.count}
+                label={tile.label}
+                color={tile.key ? statusColor(tile.key, colors) : colors.text}
+                selected={statusFilter === tile.key}
+                onPress={() => setStatusFilter(current => (tile.key === null || current === tile.key ? null : tile.key))}
+              />
             ))}
           </View>
-        ) : null}
-        {error && !creating ? (
-          <Text
-            accessibilityRole="alert"
-            className="mb-3 text-sm text-destructive"
-          >
-            {error}
-          </Text>
-        ) : null}
-        {syncing ? (
-          <View accessibilityRole="progressbar" accessibilityLabel="Syncing chats" className="mb-3 flex-row items-center gap-2 py-2">
-            <ActivityIndicator size="small" color={colors.textSecondary} />
-            <Text className="text-sm text-muted-foreground">Syncing chats…</Text>
-          </View>
-        ) : null}
-        {syncStates.filter(item => item.error).map(item => (
-          <View key={item.id} className="mb-3 gap-2">
-            <Text accessibilityRole="alert" className="text-sm text-muted-foreground">
-              {item.name}: {item.error}
-            </Text>
-            <Button variant="secondary" className="self-start rounded-full" onPress={onManageHosts}>
-              <Text>Manage servers</Text>
-            </Button>
-          </View>
-        ))}
-        {agents.map(({ session: agentSession, agent, thread, attention, terminalOnly }) => {
-          const snapshot = sessionSnapshot(agentSession);
-          const tab = snapshot.tabs.find(item => item.tab_id === agent.tab_id);
-          const workspace = snapshot.workspaces.find(
-            item => item.workspace_id === agent.workspace_id,
-          );
-          return (
-            <Button
-              key={`${agentSession.id}:${agent.pane_id}`}
-              variant="outline"
-              className="mb-3 h-auto flex-col items-start rounded-2xl p-4"
-              accessibilityLabel={`${terminalOnly ? 'Open terminal' : 'Open chat'} ${thread?.name || tab?.label || agent.agent} on ${hostDisplayName(agentSession.host)}`}
-              onPress={() => {
-                if (terminalOnly) sessions.openAgentTerminal(agentSession.id, agent);
-                else if (thread && onOpenCodex) onOpenCodex(agentSession.hostId, thread.id);
-                else if (onOpenChat)
-                  void onOpenChat({
-                    hostId: agentSession.hostId,
-                    paneId: agent.pane_id,
-                  });
-                else sessions.openAgentTerminal(agentSession.id, agent);
-              }}
-            >
-              <View className="w-full flex-row items-center justify-between gap-2">
-                <Text
-                  className="flex-1 text-base font-semibold"
-                  numberOfLines={1}
-                >
-                  {thread?.name || tab?.label || (agent.agent === 'codex' ? 'Codex' : 'Claude')}
-                </Text>
-                <StatusBadge status={agent.agent_status} />
-                {agent.agent_status === 'done' &&
-                (attention ?? chatNeedsAttention(
-                  agent,
-                  saved.activity[chatKey(agentSession.hostId, agent.pane_id)],
-                )) ? (
-                  <Text className="text-xs font-semibold text-primary">
-                    New
-                  </Text>
-                ) : null}
-              </View>
-              <Text
-                className="mt-2 text-xs text-muted-foreground"
-                numberOfLines={1}
+          {saved.favorites.length > 0 ? (
+            <>
+              <SectionLabel>Favorite projects</SectionLabel>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                className="-mx-4"
+                contentContainerClassName="gap-2.5 px-4"
               >
-                {hostDisplayName(agentSession.host)} ·{' '}
-                {thread?.cwd.split('/').filter(Boolean).at(-1) || workspace?.label || 'Workspace'} ·{' '}
-                {agent.agent === 'codex' ? 'Codex' : 'Claude'}
-                {terminalOnly ? ' · Terminal (chat link unavailable)' : ''}
-                {chatSyncState(agentSession, undefined, !sessions.restoreComplete).loading ? ' · Syncing…' : agentSession.connectionStatus === 'ready' ? '' : ' · Offline'}
-              </Text>
-            </Button>
-          );
-        })}
-        {agents.length === 0 ? (
-          <View className="items-center px-6 py-14">
-            <MessageCircle size={40} color={colors.textSecondary} />
-            <Text className="mt-5 text-lg font-semibold">
-              {syncing ? 'Loading your chats' : needsYouOnly ? 'All caught up' : 'A little room to think'}
+                {saved.favorites.map(favorite => (
+                  <View key={favorite.id} className="w-[220px]">
+                    <Button
+                      disabled={busy}
+                      variant="ghost"
+                      size="content"
+                      className="h-auto min-h-[76px] flex-col items-start justify-center gap-1 rounded-[20px] bg-card py-3 pl-3.5 pr-10 active:bg-raised"
+                      accessibilityLabel={`Start favorite ${favorite.label}`}
+                      onPress={() => openFavorite(favorite)}
+                    >
+                      <View className="flex-row items-center gap-2">
+                        <Star color={colors.warning} size={15} strokeWidth={2} />
+                        <Text className="flex-shrink text-[15px] font-semibold" numberOfLines={1}>
+                          {favorite.label}
+                        </Text>
+                      </View>
+                      <Text className="text-xs leading-4 text-text3" numberOfLines={2}>
+                        {serverLabel(favorite.hostId)} · {favorite.provider} · {favorite.model || 'Default model'} · {favorite.effort}
+                      </Text>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="content"
+                      className="absolute right-1 top-1 size-9 rounded-full active:bg-overlay"
+                      accessibilityLabel={`Remove favorite ${favorite.label}`}
+                      onPress={() =>
+                        library?.update(previous => ({
+                          ...previous,
+                          favorites: previous.favorites.filter(
+                            item => item.id !== favorite.id,
+                          ),
+                        }))
+                      }
+                    >
+                      <X size={16} color={colors.textTertiary} />
+                    </Button>
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
+          <View className="flex-row items-center gap-2 px-1 pb-2 pt-[22px]">
+            <Text accessibilityRole="header" className="flex-1 text-[13px] font-semibold text-text2">
+              Attention queue
             </Text>
-            <Text className="mt-2 text-center text-sm leading-6 text-muted-foreground">
-              {syncing ? 'Your servers reconnect automatically. Chats appear here as they arrive.' : needsYouOnly
-                ? 'No agents need your attention in this view.'
-                : 'Connect a server, then start a Codex or Claude conversation. Your existing agents appear here too.'}
-            </Text>
-            {!syncing ? <Button
-              variant="secondary"
-              className="mt-5 rounded-full"
-              onPress={onManageHosts}
-            >
-              <Text>Manage servers</Text>
-            </Button> : null}
+            {statusFilter ? (
+              <>
+                <Text className="text-[12.5px] text-text3">Showing {statusFilterLabel[statusFilter]}</Text>
+                <Button
+                  accessibilityLabel="Clear filter"
+                  className="h-[30px] min-h-0 rounded-full bg-raised px-3"
+                  size="content"
+                  variant="ghost"
+                  hitSlop={7}
+                  onPress={() => setStatusFilter(null)}
+                >
+                  <Text className="text-[12.5px] font-semibold">Clear</Text>
+                </Button>
+              </>
+            ) : (
+              <Text className="text-[12.5px] text-text3">Needs you first</Text>
+            )}
           </View>
-        ) : null}
+          {syncing ? (
+            <View accessibilityRole="progressbar" accessibilityLabel="Syncing chats" className="mb-2 flex-row items-center gap-2.5 px-1 py-1.5">
+              <BusySpinner color={colors.working} size={14} />
+              <Text className="text-[13px] text-text3">Syncing chats…</Text>
+            </View>
+          ) : null}
+          {syncStates.filter(item => item.error).map(item => (
+            <View key={item.id} className="mb-2.5 flex-row items-center gap-3 rounded-[20px] p-3.5" style={{ backgroundColor: statusTint(colors.blocked, 0.1), borderWidth: 1, borderColor: statusTint(colors.blocked, 0.3) }}>
+              <CircleAlert color={colors.blocked} size={20} />
+              <View className="min-w-0 flex-1">
+                <Text className="text-[14.5px] font-semibold text-blocked" numberOfLines={1}>Can’t sync {item.name}</Text>
+                <Text accessibilityRole="alert" className="mt-0.5 text-[13px] leading-[18px] text-text2" numberOfLines={3}>
+                  {item.error}
+                </Text>
+              </View>
+              <Button className="h-10 min-h-0 rounded-full bg-raised px-3.5" size="content" variant="ghost" onPress={onManageHosts}>
+                <Text className="text-[13.5px] font-semibold">Manage servers</Text>
+              </Button>
+            </View>
+          ))}
+          {agents.length > 0 ? (
+            <ListGroup>
+              {agents.map(row => (
+                <ChatQueueRow
+                  key={`${row.session.id}:${row.agent.pane_id}`}
+                  row={row}
+                  title={rowTitle(row)}
+                  status={chatRowStatus(row, saved.activity)}
+                  unseen={chatRowNeedsAttention(row, saved.activity)}
+                  updatedAt={chatRowUpdatedAt(row, saved.activity)}
+                  showHost={mergedQueue}
+                  syncing={chatSyncState(row.session, undefined, !sessions.restoreComplete).loading}
+                  onPress={() => {
+                    const { session: agentSession, agent, thread, terminalOnly } = row;
+                    if (terminalOnly) sessions.openAgentTerminal(agentSession.id, agent);
+                    else if (thread && onOpenCodex) onOpenCodex(agentSession.hostId, thread.id);
+                    else if (onOpenChat)
+                      void onOpenChat({
+                        hostId: agentSession.hostId,
+                        paneId: agent.pane_id,
+                      });
+                    else sessions.openAgentTerminal(agentSession.id, agent);
+                  }}
+                />
+              ))}
+            </ListGroup>
+          ) : (
+            <View className="items-center rounded-3xl bg-card px-5 pb-[22px] pt-7">
+              <Text className="text-center text-[17px] font-semibold">
+                {syncing ? 'Loading your chats'
+                  : searching ? `No chats match “${query.trim()}”`
+                    : statusFilter === 'blocked' ? 'Nobody needs you right now'
+                      : statusFilter === 'working' ? 'Nothing working right now'
+                        : statusFilter === 'done' ? 'No new completions'
+                          : 'A little room to think'}
+              </Text>
+              <Text className="mt-1.5 text-center text-sm leading-[21px] text-text2">
+                {syncing ? 'Your servers reconnect automatically. Chats appear here as they arrive.'
+                  : searching ? 'Try a chat name, agent or folder.'
+                    : statusFilter ? 'Tap All to see every chat.'
+                      : 'Connect a server, then start a Codex or Claude conversation. Your existing agents appear here too.'}
+              </Text>
+              {!syncing && !searching && !statusFilter ? (
+                <View className="mt-4 flex-row flex-wrap justify-center gap-2">
+                  {hosts.length > 0 ? (
+                    <ActionButton icon={Bot} label="New agent" accessibilityLabel="Start a new agent" height={44} radius={22} onPress={startNewAgent} />
+                  ) : null}
+                  <ActionButton label="Manage servers" height={44} radius={22} tone="raised" onPress={onManageHosts} />
+                </View>
+              ) : null}
+            </View>
+          )}
+        </View>
       </ScrollView>
       <Modal
         visible={creating}
@@ -683,24 +748,25 @@ export function ChatsScreen({
           className="flex-1 bg-background"
           style={{ paddingTop: 24, paddingBottom: bottom }}
         >
-          <View className="flex-row items-center justify-between px-5 py-4">
-            <Text className="text-2xl font-bold">New agent</Text>
+          <View className="min-h-[62px] flex-row items-center gap-1 px-2">
             <Button
               accessibilityLabel="Close new agent"
               disabled={busy}
               variant="ghost"
-              size="icon"
+              size="content"
+              className="size-11 rounded-full"
               onPress={() => setCreating(false)}
             >
-              <X color={colors.text} />
+              <X color={colors.text} size={22} strokeWidth={2} />
             </Button>
+            <Text accessibilityRole="header" className="text-[17px] font-semibold">New agent</Text>
           </View>
           <ScrollView
             keyboardShouldPersistTaps="handled"
-            className="flex-1 px-5"
-            contentContainerClassName="gap-5 pb-6"
+            className="flex-1 px-4"
+            contentContainerClassName="pb-6"
           >
-            <Field label="Server">
+            <Field label="Server" first>
               <View className="flex-row flex-wrap gap-2">
                 {hosts.map(item => (
                   <Choice
@@ -720,127 +786,131 @@ export function ChatsScreen({
                 ))}
               </View>
               {host && session?.connectionStatus !== 'ready' ? (
-                <Button
-                  disabled={busy}
-                  variant="secondary"
+                <ActionButton
                   className="mt-3"
+                  disabled={busy}
+                  height={46}
+                  label="Connect to server"
+                  radius={16}
+                  tone="card"
                   onPress={() => connect(host)}
-                >
-                  <Text>Connect to server</Text>
-                </Button>
+                />
               ) : null}
               {!host ? (
-                <Button
+                <ActionButton
+                  label="Add a server"
+                  height={46}
+                  radius={16}
                   onPress={() => {
                     setCreating(false);
                     onManageHosts();
                   }}
-                >
-                  <Text>Add a server</Text>
-                </Button>
+                />
               ) : null}
             </Field>
             {native ? (
               <Field label="Server readiness">
-                {checking ? (
-                  <Text className="text-sm text-muted-foreground">
-                    Checking CLI, login and chat integration…
-                  </Text>
-                ) : null}
-                {readiness ? (
-                  <>
-                    {readiness.version ? (
-                      <Text className="text-sm">{readiness.version}</Text>
-                    ) : null}
-                    {readinessIssues(readiness, provider).length === 0 ? (
-                      <Text className="text-sm text-muted-foreground">
-                        Credentials present · chat integration ready
+                <View className="gap-2 rounded-[20px] bg-card p-3.5">
+                  {checking ? (
+                    <View className="flex-row items-center gap-2.5">
+                      <BusySpinner color={colors.working} size={16} />
+                      <Text className="text-sm text-working">
+                        Checking CLI, login and chat integration…
                       </Text>
-                    ) : (
-                      readinessIssues(readiness, provider).map(issue => (
-                        <Text
-                          key={issue}
-                          className="mt-1 text-sm text-destructive"
-                        >
-                          {issue}
-                        </Text>
-                      ))
-                    )}
-                  </>
-                ) : null}
-                {readinessError ? (
-                  <Text className="text-sm text-destructive">
-                    {readinessError}
-                  </Text>
-                ) : null}
-                <View className="mt-2 flex-row flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={checking || busy}
-                    onPress={() => setCheckRevision(value => value + 1)}
-                  >
-                    <Text>Check again</Text>
-                  </Button>
-                  {readiness && readiness.integration !== 'current' ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      disabled={busy || checking}
-                      accessibilityLabel="Repair chat integration"
-                      onPress={async () => {
-                        if (busyRef.current) return;
-                        busyRef.current = true;
-                        setBusy(true);
-                        setError(null);
-                        try {
-                          await native.installAgentIntegration(provider);
-                          setCheckRevision(value => value + 1);
-                        } catch (reason) {
-                          setError(String(reason));
-                        } finally {
-                          busyRef.current = false;
-                          setBusy(false);
+                    </View>
+                  ) : null}
+                  {readiness ? (
+                    <>
+                      {readiness.version ? (
+                        <Text className="font-mono text-[12.5px] text-text2">{readiness.version}</Text>
+                      ) : null}
+                      {readinessIssues(readiness, provider).length === 0 ? (
+                        <View className="flex-row items-center gap-2">
+                          <Check color={colors.done} size={16} strokeWidth={2.4} />
+                          <Text className="text-sm text-text2">
+                            Credentials present · chat integration ready
+                          </Text>
+                        </View>
+                      ) : (
+                        readinessIssues(readiness, provider).map(issue => (
+                          <View key={issue} className="flex-row items-start gap-2">
+                            <CircleAlert color={colors.blocked} size={16} style={{ marginTop: 2 }} />
+                            <Text className="flex-1 text-sm text-blocked">
+                              {issue}
+                            </Text>
+                          </View>
+                        ))
+                      )}
+                    </>
+                  ) : null}
+                  {readinessError ? (
+                    <Text className="text-sm text-blocked">
+                      {readinessError}
+                    </Text>
+                  ) : null}
+                  <View className="mt-1 flex-row flex-wrap gap-2">
+                    <SmallAction
+                      icon={RefreshCw}
+                      label="Check again"
+                      disabled={checking || busy}
+                      onPress={() => setCheckRevision(value => value + 1)}
+                    />
+                    {readiness && readiness.integration !== 'current' ? (
+                      <SmallAction
+                        icon={Wrench}
+                        label="Repair integration"
+                        accessibilityLabel="Repair chat integration"
+                        disabled={busy || checking}
+                        onPress={async () => {
+                          if (busyRef.current) return;
+                          busyRef.current = true;
+                          setBusy(true);
+                          setError(null);
+                          try {
+                            await native.installAgentIntegration(provider);
+                            setCheckRevision(value => value + 1);
+                          } catch (reason) {
+                            setError(String(reason));
+                          } finally {
+                            busyRef.current = false;
+                            setBusy(false);
+                          }
+                        }}
+                      />
+                    ) : null}
+                    <SmallAction
+                      icon={SquareTerminal}
+                      label="Server terminal"
+                      disabled={busy}
+                      onPress={() => {
+                        if (session) {
+                          setCreating(false);
+                          sessions.openSshShell(session.id);
                         }
                       }}
-                    >
-                      <Text>Repair integration</Text>
-                    </Button>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={busy}
-                    onPress={() => {
-                      if (session) {
-                        setCreating(false);
-                        sessions.openSshShell(session.id);
-                      }
-                    }}
-                  >
-                    <Text>Server terminal</Text>
-                  </Button>
+                    />
+                  </View>
                 </View>
               </Field>
             ) : null}
             <Field label="Provider">
-              <View className="flex-row gap-2">
-                {(['codex', 'claude'] as const).map(item => (
-                  <Choice
-                    key={item}
-                    disabled={busy}
-                    label={item === 'codex' ? 'Codex' : 'Claude'}
-                    selected={provider === item}
-                    onPress={() =>
-                      setPreferences(current => ({
-                        ...current,
-                        provider: item,
-                      }))
-                    }
-                  />
-                ))}
-              </View>
-              <Text className="mt-2 text-xs text-muted-foreground">
+              <SegmentedControl
+                accessibilityLabel="Provider"
+                size="lg"
+                options={[
+                  { value: 'codex' as const, label: 'Codex' },
+                  { value: 'claude' as const, label: 'Claude' },
+                ]}
+                value={provider}
+                onChange={item => {
+                  if (busy) return;
+                  setPreferences(current => ({
+                    ...current,
+                    provider: item,
+                  }));
+                }}
+              />
+              <Text className="ml-1 mt-2 text-[12.5px] text-text3">
                 {provider === 'codex'
                   ? 'Auto-review · workspace access'
                   : 'Auto mode'}
@@ -849,6 +919,7 @@ export function ChatsScreen({
             <Field label="Model">
               <Input
                 accessibilityLabel="Model"
+                className="font-mono text-[14.5px]"
                 editable={!busy}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -867,7 +938,7 @@ export function ChatsScreen({
                   />
                 ))}
               </View>
-              <Text className="mt-2 text-xs text-muted-foreground">
+              <Text className="ml-1 mt-2 text-[12.5px] text-text3">
                 {catalogLoading ? 'Loading models from this server…' : catalog.length
                   ? 'Models reported by this server. You can also enter a model ID.'
                   : 'Model list unavailable. Use the server default or enter a model ID.'}
@@ -885,7 +956,7 @@ export function ChatsScreen({
                   />
                 ))}
               </View>
-              <Text className="mt-2 text-xs text-muted-foreground">
+              <Text className="ml-1 mt-2 text-[12.5px] text-text3">
                 {!efforts.includes(options.effort) ? 'The saved effort is unavailable for this model. Choose Default or a supported level.' : 'Effort levels reported for the selected model.'}
               </Text>
             </Field>
@@ -912,20 +983,25 @@ export function ChatsScreen({
                   />
                 ))}
               </View>
-              <Text className="mt-3 text-sm font-medium">New workspace folder</Text>
-              {directoriesLoading ? <Text className="mt-2 text-xs text-muted-foreground">Loading folders…</Text> : null}
+              <Text className="ml-1 mt-4 text-[12.5px] font-medium text-text3">New workspace folder</Text>
+              {directoriesLoading ? (
+                <View className="ml-1 mt-2 flex-row items-center gap-2">
+                  <BusySpinner color={colors.working} size={14} />
+                  <Text className="text-[12.5px] text-working">Loading folders…</Text>
+                </View>
+              ) : null}
               {directories.length > 10 ? (
                 <Input accessibilityLabel="Find project folder" className="mt-2" value={folderFilter} onChangeText={setFolderFilter} placeholder="Find a project…" autoCorrect={false} />
               ) : null}
               <View className="mt-2 flex-row flex-wrap gap-2">
                 {directories.filter(folder => folder.label.startsWith('~') || folder.label.toLowerCase().includes(folderFilter.toLowerCase())).map(folder => (
-                  <Choice key={folder.path} label={folder.label} disabled={busy} selected={directory === folder.path} onPress={() => setDirectory(folder.path)} />
+                  <Choice key={folder.path} icon={FolderOpen} mono label={folder.label} disabled={busy} selected={directory === folder.path} onPress={() => setDirectory(folder.path)} />
                 ))}
               </View>
-              {directoryError ? <Text className="mt-2 text-xs text-muted-foreground">Could not load folders. Check the server again or enter a path below.</Text> : null}
+              {directoryError ? <Text className="ml-1 mt-2 text-[12.5px] text-text3">Could not load folders. Check the server again or enter a path below.</Text> : null}
               <Input
                 accessibilityLabel="New project directory"
-                className="mt-2"
+                className="mt-2 font-mono text-[14.5px]"
                 editable={!busy}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -946,12 +1022,14 @@ export function ChatsScreen({
             {library ? (
               <Button
                 accessibilityLabel="Save favorite project"
-                variant="outline"
+                variant="ghost"
+                size="content"
+                className="mt-5 h-[46px] flex-row gap-2 rounded-2xl bg-card active:bg-raised"
                 disabled={!host || busy || !library.loaded}
                 onPress={saveFavorite}
               >
-                <Star size={18} color={colors.text} />
-                <Text>
+                <Star size={17} color={favoriteSaved ? colors.warning : colors.text} fill={favoriteSaved ? colors.warning : 'transparent'} />
+                <Text className="text-[14.5px] font-semibold">
                   {favoriteSaved
                     ? 'Favorite saved'
                     : 'Save as favorite project'}
@@ -961,25 +1039,23 @@ export function ChatsScreen({
             {error ? (
               <Text
                 accessibilityRole="alert"
-                className="text-sm text-destructive"
+                className="ml-1 mt-4 text-[13px] leading-[18px] text-blocked"
               >
                 {error}
               </Text>
             ) : null}
           </ScrollView>
-          <View className="px-5 py-4">
-            <Button
+          <View className="px-4 pb-3.5 pt-2">
+            <ActionButton
               accessibilityLabel="Start conversation"
+              busy={busy}
               disabled={busy || !host || session?.connectionStatus !== 'ready'}
-              className="h-14 rounded-full"
+              height={54}
+              icon={Bot}
+              label={busy ? 'Starting…' : 'Start conversation'}
+              radius={19}
               onPress={() => reportBackgroundFailure(launch(), 'chat-launch')}
-            >
-              {busy ? (
-                <ActivityIndicator color={colors.onPrimary} />
-              ) : (
-                <Text>Start conversation</Text>
-              )}
-            </Button>
+            />
           </View>
         </KeyboardAvoidingView>
       </Modal>
@@ -990,13 +1066,15 @@ export function ChatsScreen({
 function Field({
   label,
   children,
+  first = false,
 }: {
   label: string;
   children: React.ReactNode;
+  first?: boolean;
 }) {
   return (
-    <View>
-      <Text className="mb-2 text-sm font-semibold">{label}</Text>
+    <View className={first ? 'mt-2' : 'mt-6'}>
+      <Text accessibilityRole="header" className="mb-2.5 ml-1 text-[13px] font-semibold text-text2">{label}</Text>
       {children}
     </View>
   );
@@ -1007,22 +1085,230 @@ function Choice({
   selected,
   disabled,
   onPress,
+  icon: IconComponent,
+  mono = false,
 }: {
   label: string;
   selected: boolean;
   disabled?: boolean;
   onPress: () => void;
+  icon?: typeof FolderOpen;
+  mono?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
     <Button
       accessibilityLabel={label}
       accessibilityState={{ selected }}
       disabled={disabled}
-      variant={selected ? 'default' : 'outline'}
-      className="h-10 rounded-full px-4"
+      variant="ghost"
+      size="content"
+      className={cn('h-10 min-h-0 flex-row gap-1.5 rounded-full px-4', selected ? 'active:opacity-90' : 'bg-card active:bg-raised')}
+      style={selected ? { backgroundColor: statusTint(colors.primary, 0.16) } : undefined}
       onPress={onPress}
     >
-      <Text>{label}</Text>
+      {IconComponent ? <IconComponent color={selected ? colors.primary : colors.textTertiary} size={15} /> : null}
+      <Text className={cn('text-sm font-semibold', mono && 'font-mono text-[13px]', selected ? 'text-primary' : 'text-text2')}>{label}</Text>
     </Button>
+  );
+}
+
+function SmallAction({
+  label,
+  icon: IconComponent,
+  onPress,
+  disabled,
+  accessibilityLabel,
+}: {
+  label: string;
+  icon: typeof RefreshCw;
+  onPress: () => void;
+  disabled?: boolean;
+  accessibilityLabel?: string;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Button
+      accessibilityLabel={accessibilityLabel ?? label}
+      disabled={disabled}
+      variant="ghost"
+      size="content"
+      className="h-9 min-h-0 flex-row gap-1.5 rounded-[13px] bg-raised px-3 active:bg-overlay"
+      hitSlop={4}
+      onPress={onPress}
+    >
+      <IconComponent color={colors.textSecondary} size={14} />
+      <Text className="text-[13px] font-semibold">{label}</Text>
+    </Button>
+  );
+}
+
+/** Server rail chip: 44 tall, accent tint when selected, with the server's aggregate dot. */
+function RailChip({
+  label,
+  count,
+  dotColor,
+  selected,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  dotColor?: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  return (
+    <Button
+      accessibilityLabel={`${label}, ${count} ${count === 1 ? 'chat' : 'chats'}`}
+      accessibilityState={{ selected }}
+      variant="ghost"
+      size="content"
+      className={cn('h-11 flex-row gap-2 rounded-full px-[15px]', selected ? 'active:opacity-90' : 'bg-card active:bg-raised')}
+      style={selected ? { backgroundColor: statusTint(colors.primary, 0.16) } : undefined}
+      onPress={onPress}
+    >
+      {dotColor ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: dotColor }} /> : null}
+      <Text className={cn('text-sm font-semibold', selected ? 'text-primary' : 'text-text2')} numberOfLines={1}>
+        {label}
+      </Text>
+      <Text className={cn('text-sm font-medium', selected ? 'text-primary' : 'text-text2')} style={{ opacity: 0.65 }}>
+        {count}
+      </Text>
+    </Button>
+  );
+}
+
+/** Status tile: tap filters the queue; tap again (or All) to clear. */
+function StatusTile({
+  label,
+  count,
+  color,
+  selected,
+  onPress,
+}: {
+  label: string;
+  count: number;
+  color: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  const all = label === 'All';
+  return (
+    <Button
+      accessibilityLabel={`${label}, ${count}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      variant="ghost"
+      size="content"
+      className="h-[78px] flex-1 flex-col items-start justify-between rounded-[20px] px-3 pb-[11px] pt-3 active:opacity-90"
+      style={{
+        backgroundColor: selected ? (all ? colors.raised : statusTint(color, 0.14)) : colors.card,
+        borderWidth: 1.5,
+        borderColor: selected ? (all ? 'rgba(192,202,245,0.22)' : statusTint(color, 0.6)) : 'transparent',
+      }}
+      onPress={onPress}
+    >
+      <Text className="text-[26px] font-semibold leading-[26px]" style={{ color, fontVariant: ['tabular-nums'], letterSpacing: -0.52 }}>
+        {count}
+      </Text>
+      <Text className="text-[12.5px] font-medium text-text2" numberOfLines={1}>{label}</Text>
+    </Button>
+  );
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  blocked: 'Needs you',
+  done: 'Done',
+  working: 'Working',
+  idle: 'Idle',
+  unknown: 'Starting',
+};
+
+/** Attention-queue row: medallion · title and meta · status and time · chevron. */
+function ChatQueueRow({
+  row,
+  title,
+  status,
+  unseen,
+  updatedAt,
+  showHost,
+  syncing,
+  onPress,
+}: {
+  row: ChatRow;
+  title: string;
+  status: string;
+  unseen: boolean;
+  updatedAt?: number;
+  showHost: boolean;
+  syncing: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  const { session: agentSession, agent, thread, terminalOnly } = row;
+  const snapshot = sessionSnapshot(agentSession);
+  const accessibleName = thread?.name || snapshot.tabs.find(item => item.tab_id === agent.tab_id)?.label || agent.agent;
+  const workspace = snapshot.workspaces.find(item => item.workspace_id === agent.workspace_id);
+  const offline = !syncing && agentSession.connectionStatus !== 'ready';
+  const color = statusColor(status, colors);
+  const provider = agent.agent === 'codex' ? 'codex' : 'claude';
+  const path = shortHomePath(thread?.cwd || agent.cwd) || workspace?.label;
+  const statusText = offline ? 'Offline' : syncing ? 'Syncing…' : STATUS_LABELS[status] ?? status;
+  const time = formatRelativeShort(updatedAt);
+  return (
+    <Button
+      accessibilityLabel={`${terminalOnly ? 'Open terminal' : 'Open chat'} ${accessibleName} on ${hostDisplayName(agentSession.host)}`}
+      accessibilityHint={`${statusText}${unseen && status === 'done' ? ', new' : ''}`}
+      variant="ghost"
+      size="content"
+      className="h-auto min-h-[72px] w-full flex-row items-center justify-start gap-3.5 rounded-none py-3 pl-3.5 pr-2 active:bg-raised"
+      style={status === 'blocked' ? { backgroundColor: colors.blockedRow } : undefined}
+      onPress={onPress}
+    >
+      <AgentStatusMedallion
+        accessibilityLabel={statusText}
+        status={offline ? 'idle' : status}
+        color={offline ? colors.decor : status === 'idle' ? colors.decor : color}
+      />
+      <View className="min-w-0 flex-1">
+        <Text className="text-base font-semibold leading-[22px]" numberOfLines={1}>
+          {title}
+        </Text>
+        <Text className="mt-0.5 text-[12.5px] leading-[17px] text-text3" numberOfLines={1}>
+          <Text className="text-[12.5px] text-text2">{provider}</Text>
+          {showHost ? ` · ${hostDisplayName(agentSession.host)}` : ''}
+          {path ? ' · ' : ''}
+          {path ? <Text className="font-mono text-xs text-text3">{path}</Text> : null}
+          {terminalOnly ? ' · Terminal (chat link unavailable)' : ''}
+        </Text>
+      </View>
+      <View className="items-end">
+        <Text
+          className="text-[12.5px] font-semibold"
+          style={{ color: offline || syncing || status === 'idle' || status === 'unknown' ? colors.textTertiary : color }}
+          numberOfLines={1}
+        >
+          {statusText}
+        </Text>
+        {time ? <Text className="mt-0.5 text-xs text-text3">{time}</Text> : null}
+      </View>
+      <ChevronRight color={colors.decor} size={18} strokeWidth={2} />
+    </Button>
+  );
+}
+
+function Banner({ message, tone }: { message: string; tone: 'bad' }) {
+  const { colors } = useTheme();
+  return (
+    <View
+      accessibilityRole="alert"
+      className="mt-3 flex-row items-start gap-2.5 rounded-[20px] p-3.5"
+      style={{ backgroundColor: statusTint(tone === 'bad' ? colors.blocked : colors.primary, 0.1) }}
+    >
+      <CircleAlert color={colors.blocked} size={18} style={{ marginTop: 1 }} />
+      <Text className="flex-1 text-[13px] leading-[18px] text-blocked">{message}</Text>
+    </View>
   );
 }

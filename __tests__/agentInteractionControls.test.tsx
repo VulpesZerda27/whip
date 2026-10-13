@@ -22,10 +22,14 @@ jest.mock('react-native', () => ({
   ActivityIndicator: 'ActivityIndicator',
   ScrollView: 'ScrollView',
   View: 'View',
+  useColorScheme: () => 'dark',
 }));
 jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
+jest.mock('../src/components/app-ui', () => ({ PulsingDot: 'PulsingDot' }));
+jest.mock('../src/components/nightfall', () => ({ BusySpinner: 'BusySpinner' }));
+jest.mock('lucide-react-native', () => ({ ArrowUp: 'ArrowUp', ChevronDown: 'ChevronDown' }));
 
 const PROMPT: NativeAgentInteractionPrompt = {
   token: 'live-prompt-1',

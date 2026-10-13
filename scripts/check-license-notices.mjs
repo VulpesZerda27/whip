@@ -33,6 +33,11 @@ const noticeSources = [
     sha256: '625f0f619133f89bbbb2abe37369613dfa1885eba1e50d02170deb62bb42cb6b',
   },
   {
+    id: 'instrument-sans',
+    asset: 'assets/licenses/instrument-sans-OFL-1.1.txt',
+    source: 'assets/gui-fonts/InstrumentSans-OFL.txt',
+  },
+  {
     id: 'inter',
     asset: 'assets/licenses/inter-OFL-1.1.txt',
     source: 'assets/gui-fonts/OFL.txt',

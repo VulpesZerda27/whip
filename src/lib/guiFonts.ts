@@ -3,13 +3,15 @@ import { terminalFontFamily } from './terminalFonts';
 // Native Markdown's CJK spans resolve this Expo alias on Android and iOS.
 export const chatCjkFontFamily = 'WhipChatCJK';
 
+// Nightfall UI type: Instrument Sans ships 400–700, so heavier classes use Bold.
+// Android needs one registered family per weight.
 export const guiFontFamilies = {
-  regular: 'Inter-Regular',
-  medium: 'Inter-Medium',
-  semiBold: 'Inter-SemiBold',
-  bold: 'Inter-Bold',
-  extraBold: 'Inter-ExtraBold',
-  black: 'Inter-Black',
+  regular: 'InstrumentSans-Regular',
+  medium: 'InstrumentSans-Medium',
+  semiBold: 'InstrumentSans-SemiBold',
+  bold: 'InstrumentSans-Bold',
+  extraBold: 'InstrumentSans-Bold',
+  black: 'InstrumentSans-Bold',
   mono: terminalFontFamily,
 } as const;
 

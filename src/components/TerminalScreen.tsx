@@ -1032,6 +1032,12 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
 
     useEffect(() => {
       if (!ready) return;
+      // A hidden terminal must not take native focus; in touch mode Android
+      // would raise the keyboard over whichever screen replaced it.
+      if (!visible) {
+        renderer.current?.setKeyboardEnabled(false);
+        return;
+      }
       renderer.current?.setKeyboardEnabled(directKeyboardEnabled);
       if (!directKeyboardEnabled && !composerKeyboardEnabled) {
         Keyboard.dismiss();
@@ -1041,6 +1047,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       composerKeyboardEnabled,
       directKeyboardEnabled,
       ready,
+      visible,
     ]);
 
     useEffect(() => {
@@ -2100,12 +2107,14 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
       pasteTargetKey: activeTarget?.key,
       onImagePaste: pasteComposerImage,
       onImagePasteError: (pasteError: Error) => setError(pasteError.message),
-      autoFocus: keyboardEnabled && !simpleChat,
+      // A hidden terminal must not autofocus: leaving chat renders one frame
+      // with the terminal composer before compose closes.
+      autoFocus: keyboardEnabled && !simpleChat && visible,
       showSoftInputOnFocus: keyboardEnabled,
       multiline: true,
       textAlignVertical: 'top',
       onChangeText: updateComposeText,
-      placeholder: t('terminal.composePlaceholder'),
+      placeholder: t(simpleChat ? 'terminal.chatPlaceholder' : 'terminal.composePlaceholder'),
       placeholderTextColor: colors.muted,
     } satisfies ComponentProps<typeof ComposerInput>;
     const composerQueueAndAttachments = (
@@ -2410,7 +2419,7 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
             </View>
           </View>
         )}
-        {composeOpen && !composeExpanded && (
+        {composeOpen && !composeExpanded && visible && (
           <Portal name={`terminal-composer-${terminalId}`}>
             <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
               <View

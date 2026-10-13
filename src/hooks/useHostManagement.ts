@@ -92,7 +92,8 @@ export interface HostManagementController {
   openManualHost: () => void;
   openEditor: (host: HostProfile) => Promise<void>;
   closeEditor: () => void;
-  saveHost: (profile: ConnectionProfile) => Promise<void>;
+  /** Resolves true once the profile is stored. */
+  saveHost: (profile: ConnectionProfile) => Promise<boolean>;
   savePairedHost: (
     result: PairHostResult,
     key: PairingKeySelection,
@@ -107,7 +108,8 @@ export interface HostManagementController {
   closeKnownHosts: () => void;
   confirmDelete: (host: HostProfile) => void;
   cancelDelete: () => void;
-  deleteConfirmed: () => Promise<void>;
+  /** Resolves with the deleted host, or null when nothing was deleted. */
+  deleteConfirmed: () => Promise<HostProfile | null>;
   unlockCredentialRecovery: () => Promise<boolean>;
   dismissTopOverlay: () => boolean;
   closePairingSuccess: () => void;
@@ -325,8 +327,10 @@ export function useHostManagement({
         await persistProfile(profile);
         setCredentialRecovery(await credentialRecoveryStatus());
         setEditorProfile(null);
+        return true;
       } catch (saveError) {
         setError(t('app.saveHostError', { error: String(saveError) }));
+        return false;
       }
     },
     [persistProfile, t],
@@ -426,7 +430,7 @@ export function useHostManagement({
   }, [replaceKnownHostsState]);
 
   const deleteConfirmed = useCallback(async () => {
-    if (!deleteHostTarget || deleteHostBusy) return;
+    if (!deleteHostTarget || deleteHostBusy) return null;
     const target = deleteHostTarget;
     setDeleteHostBusy(true);
     onDeleteConnectedHostRef.current(target.id);
@@ -438,9 +442,11 @@ export function useHostManagement({
       setEditorProfile(null);
       setError(null);
       setDeleteHostTarget(null);
+      return target;
     } catch (deleteError) {
       setDeleteHostTarget(null);
       setError(t('app.deleteHostError', { error: String(deleteError) }));
+      return null;
     } finally {
       setDeleteHostBusy(false);
     }

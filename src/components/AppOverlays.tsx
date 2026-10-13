@@ -1,4 +1,5 @@
 import { View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 
 import type { DevicePreferences } from '../services/devicePreferences';
 import type { HostManagementController } from '../hooks/useHostManagement';
@@ -10,7 +11,9 @@ import {
   ignoreExpectedCancellation,
   reportBackgroundFailure,
 } from '../services/backgroundOperations';
+import { hostDisplayName } from '../lib/hostProfiles';
 import { AppAccessLock } from './AppAccessLock';
+import { useToast } from './nightfall';
 import { ConnectionScreen } from './ConnectionScreen';
 import { DeleteHostConfirmationPopup } from './DeleteHostConfirmationPopup';
 import { FullScreenOverlay } from './FullScreenOverlay';
@@ -41,6 +44,8 @@ export function AppOverlays({
   remoteFiles,
   security,
 }: AppOverlaysProps) {
+  const { t } = useTranslation();
+  const toast = useToast();
   const { biometricForKeys } =
     effectivePreferences;
   const activeSession = sessions.activeSession;
@@ -76,7 +81,23 @@ export function AppOverlays({
             connecting={sessions.connectingHostIds.has(hosts.editorProfile.id)}
             error={hosts.error}
             onCancel={hosts.closeEditor}
-            onSave={hosts.saveHost}
+            onSave={profile => {
+              const existing = hosts.hosts.some(host => host.id === profile.id);
+              reportBackgroundFailure(hosts.saveHost(profile).then(saved => {
+                if (!saved) return;
+                const name = hostDisplayName(profile);
+                toast.show({
+                  message: t(existing ? 'hosts.savedChangesToast' : 'hosts.savedToast', { host: name }),
+                  action: existing ? undefined : {
+                    label: t('common.connect'),
+                    onPress: () => {
+                      sessions.connectSavedHost(profile, { navigate: false })
+                        .catch(error => hosts.setError(String(error)));
+                    },
+                  },
+                });
+              }), 'host-save');
+            }}
             onConnect={sessions.connect}
             onDelete={
               hosts.hosts.some(host => host.id === hosts.editorProfile?.id)
@@ -158,7 +179,9 @@ export function AppOverlays({
         host={hosts.deleteHostTarget}
         onCancel={hosts.cancelDelete}
         onDelete={() => {
-          reportBackgroundFailure(hosts.deleteConfirmed(), 'host-delete');
+          reportBackgroundFailure(hosts.deleteConfirmed().then(deleted => {
+            if (deleted) toast.show({ message: t('hosts.deletedToast', { host: hostDisplayName(deleted) }), tone: 'info' });
+          }), 'host-delete');
         }}
       />
       <PairingSuccessPopup

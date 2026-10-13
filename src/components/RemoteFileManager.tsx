@@ -1,14 +1,14 @@
 import type { RuntimePreviewInfo, RuntimeRemoteFileEntry } from 'react-native-whip-ssh';
 import { formatGitDiffSelection } from 'react-native-whip-ssh';
 import * as WebBrowser from 'expo-web-browser';
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileCode2, FileMusic, FileText, FileVideo, Folder, FolderOpen, GitBranch, GitCompareArrows, Image as ImageIcon, Pencil, RefreshCw, SlidersHorizontal, Trash2, Upload, X } from 'lucide-react-native';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Alert, AppState, FlatList, Modal, PanResponder, Pressable, ScrollView, View } from 'react-native';
 import Animated, { cancelAnimation, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTranslation } from 'react-i18next';
 
-import { formatRemoteFileSize, isRemoteHiddenPath, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
+import { breadcrumbSegments, formatRemoteFileSize, isRemoteHiddenPath, parentRemotePath, remoteEntryName, remotePreviewKind, sortRemoteEntries, type RemoteFileSortField, type RemotePreviewKind } from '@/src/lib/remoteFiles';
 import { REMOTE_FILE_SWIPE_ACTION_WIDTH, remoteFileSwipeOffset, shouldClaimRemoteFileSwipe, shouldOpenRemoteFileSwipe } from '@/src/lib/remoteFileSwipeActions';
 import { DEFAULT_SPRING_CONFIG } from '@/src/lib/motion';
 import { buildRemoteGitTreeRows, isRemoteGitEntryDeleted, remoteGitStatusLabel, type RemoteGitDiff, type RemoteGitRepository, type RemoteGitStatusEntry } from '@/src/lib/remoteGit';
@@ -19,8 +19,11 @@ import { useRemoteFileViewPreferences } from '@/src/hooks/useRemoteFileViewPrefe
 import { useGitReviewRefresh } from '@/src/hooks/useGitReviewRefresh';
 import { loadRemoteGitCollapsedPaths, loadRemoteGitMode, saveRemoteGitCollapsedPaths, saveRemoteGitMode } from '@/src/services/remoteGitPreferences';
 import { gitReviewKey, loadGitReviewState, rememberGitReviewState, type GitReviewState } from '@/src/services/gitReviewState';
-import { colorWithAlpha, useTheme, type ThemeColors } from '@/src/theme';
+import { colorWithAlpha, statusTint, useTheme, type ThemeColors } from '@/src/theme';
+import { shortHomePath } from '@/src/lib/paths';
+import { cn } from '@/src/lib/utils';
 import { hapticPress } from './app-ui';
+import { SegmentedControl } from './nightfall';
 import { CodeEditor, CodePreview } from './CodePreview';
 import { ConfirmationPopup } from './ConfirmationPopup';
 import { HtmlPreview } from './HtmlPreview';
@@ -588,16 +591,18 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
       >
         {preview ? (
           <>
-            <View className="h-14 flex-row items-center border-b border-border bg-background">
-              <Button accessibilityLabel={t('files.backToDirectory')} className="h-14 w-11 rounded-none px-0" variant="ghost" onPress={() => confirmDiscard(closePreviewNow)}>
-                <ChevronLeft size={21} color={colors.text} />
+            <View className="min-h-[62px] flex-row items-center bg-background pl-1 pr-1">
+              <Button accessibilityLabel={t('files.backToDirectory')} className="size-11 rounded-full px-0" size="content" variant="ghost" onPress={() => confirmDiscard(closePreviewNow)}>
+                <ChevronLeft size={22} strokeWidth={2} color={colors.text} />
               </Button>
               <View className="min-w-0 flex-1 px-1">
-                <Text numberOfLines={1} className="text-[14px] font-bold text-foreground">
+                <Text numberOfLines={1} className="text-[17px] font-semibold leading-[22px] text-foreground">
                   {remoteEntryName(preview.entry)}
                 </Text>
-                <Text numberOfLines={1} className="font-mono text-[8px] text-muted-foreground">
-                  {preview.path}
+                <Text numberOfLines={1} className="text-xs text-text3">
+                  <Text className="font-mono text-xs text-text3">{shortHomePath(parentRemotePath(preview.path))}</Text>
+                  {!preview.gitStatus && preview.entry.size != null && preview.entry.kind !== 'directory' ? ` · ${formatRemoteFileSize(preview.entry.size)}` : ''}
+                  {!preview.gitStatus && formatRemoteModificationDate(preview.entry.modifiedAt) ? ` · ${formatRemoteModificationDate(preview.entry.modifiedAt)}` : ''}
                 </Text>
               </View>
               {canEdit &&
@@ -605,7 +610,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                   <>
                     <Button
                       accessibilityLabel={t('files.cancelEdit')}
-                      className="h-14 w-11 rounded-none px-0"
+                      className="size-11 rounded-full px-0"
                       disabled={actionBusy}
                       variant="ghost"
                       onPress={() =>
@@ -617,30 +622,30 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                     >
                       <X size={18} color={colors.textSecondary} />
                     </Button>
-                    <Button accessibilityLabel={t('files.save')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(savePreview)}>
+                    <Button accessibilityLabel={t('files.save')} className="size-11 rounded-full px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(savePreview)}>
                       {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Check size={19} color={colors.primary} />}
                     </Button>
                   </>
                 ) : (
-                  <Button accessibilityLabel={t('files.edit')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(() => updatePreview({ editing: true }))}>
+                  <Button accessibilityLabel={t('files.edit')} className="size-11 rounded-full px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(() => updatePreview({ editing: true }))}>
                     <Pencil size={17} color={colors.text} />
                   </Button>
                 ))}
               {!preview.editing && !preview.gitStatus && (
-                <Button accessibilityLabel={t('files.download')} className="h-14 w-11 rounded-none px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(downloadPreview)}>
+                <Button accessibilityLabel={t('files.download')} className="size-11 rounded-full px-0" disabled={actionBusy} variant="ghost" onPress={hapticPress(downloadPreview)}>
                   {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Download size={18} color={colors.text} />}
                 </Button>
               )}
-              <Button accessibilityLabel={t('files.close')} className="h-14 w-11 rounded-none px-0" variant="ghost" onPress={() => confirmDiscard(dismissNow)}>
+              <Button accessibilityLabel={t('files.close')} className="size-11 rounded-full px-0" variant="ghost" onPress={() => confirmDiscard(dismissNow)}>
                 <X size={19} color={colors.text} />
               </Button>
             </View>
             {preview.gitStatus && gitReviewIndex >= 0 ? (
-              <View className="h-12 flex-row items-center border-b border-border px-2">
+              <View className="mx-2.5 mb-2 h-12 flex-row items-center rounded-2xl bg-card px-1">
                 <Button accessibilityLabel={t('files.gitPreviousFile')} className="size-11 rounded-full px-0" disabled={gitReviewIndex === 0} variant="ghost" onPress={hapticPress(() => openGitChange(gitReviewFiles[gitReviewIndex - 1]))}>
                   <ChevronLeft size={19} color={colors.text} />
                 </Button>
-                <Text className="flex-1 text-center text-[12px] text-muted-foreground">
+                <Text className="flex-1 text-center text-[13px] text-text3" style={{ fontVariant: ['tabular-nums'] }}>
                   {t('files.gitFilePosition', { current: gitReviewIndex + 1, total: gitReviewFiles.length })}
                 </Text>
                 <Button accessibilityLabel={t('files.gitNextFile')} className="size-11 rounded-full px-0" disabled={gitReviewIndex === gitReviewFiles.length - 1} variant="ghost" onPress={hapticPress(() => openGitChange(gitReviewFiles[gitReviewIndex + 1]))}>
@@ -744,40 +749,69 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
           </>
         ) : (
           <>
-            <View className="h-14 flex-row items-center border-b border-border bg-background px-1">
-              <View className="size-11 items-center justify-center">
-                <FolderOpen size={20} color={colors.text} />
+            <View className="min-h-[62px] flex-row items-center bg-background pl-1 pr-1">
+              <Button accessibilityLabel={t('files.close')} className="size-11 rounded-full px-0" size="content" variant="ghost" onPress={dismissNow}>
+                <ChevronLeft size={22} strokeWidth={2} color={colors.text} />
+              </Button>
+              <View className="min-w-0 flex-1 px-1">
+                <Text className="text-[17px] font-semibold leading-[22px] text-foreground">{t('files.title')}</Text>
+                <Text numberOfLines={1} className="font-mono text-xs text-text3">
+                  {shortHomePath(gitMode ? gitRepository?.root : path || initialPath)}
+                </Text>
               </View>
-              <View className="min-w-0 flex-1">
-                <Text className="text-[17px] font-bold text-foreground">{t('files.title')}</Text>
-                <Text className="text-[8px] uppercase tracking-[1px] text-muted-foreground">{t(gitMode ? 'files.gitRemote' : 'files.remote')}</Text>
-              </View>
-              <Button accessibilityLabel={t('files.close')} className="size-11 rounded-full px-0" variant="ghost" onPress={dismissNow}>
-                <X size={19} color={colors.text} />
+              <Button accessibilityLabel={t('files.options')} className="size-11 rounded-full px-0" disabled={busy || actionBusy} size="content" variant="ghost" onPress={hapticPress(() => setSortMenuVisible(true))}>
+                <SlidersHorizontal size={19} color={colors.text} />
+              </Button>
+              <Button accessibilityLabel={t('files.upload')} className="size-11 rounded-full px-0" disabled={busy || actionBusy || !path} size="content" variant="ghost" onPress={hapticPress(uploadFile)}>
+                {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Upload size={19} color={colors.text} />}
+              </Button>
+              <Button accessibilityLabel={t('files.refresh')} className="size-11 rounded-full px-0" disabled={busy || actionBusy || gitBusy} size="content" variant="ghost" onPress={hapticPress(() => (gitMode ? refreshGitChanges() : loadDirectory(path || initialPath)))}>
+                <RefreshCw size={19} color={colors.text} />
               </Button>
             </View>
-            <View className="h-12 flex-row items-center border-b border-border bg-card">
-              <Button accessibilityLabel={t('files.parentDirectory')} className="h-12 w-12 rounded-none px-0" disabled={!path || path === '/' || busy || actionBusy} variant="ghost" onPress={hapticPress(() => loadDirectory(parentRemotePath(path)))}>
-                <ChevronLeft size={20} color={colors.text} />
-              </Button>
-              <Text numberOfLines={1} className="min-w-0 flex-1 text-[10px] text-foreground">
-                {gitMode ? gitRepository?.root : path || initialPath}
-              </Text>
-              {gitRepository ? (
-                <Button accessibilityLabel={t('files.gitMode')} accessibilityRole="switch" accessibilityState={{ checked: gitMode }} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || gitBusy} variant={gitMode ? 'secondary' : 'ghost'} onPress={hapticPress(toggleGitMode)}>
-                  {gitBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <GitCompareArrows size={18} color={gitMode ? colors.primary : colors.text} />}
+            {gitRepository ? (
+              <View className="px-2.5 pb-2.5">
+                <SegmentedControl
+                  accessibilityLabel={t('files.gitMode')}
+                  size="lg"
+                  options={[
+                    { value: 'files' as const, label: t('files.modeFiles') },
+                    { value: 'changes' as const, label: gitStatus.length ? t('files.modeChangesCount', { count: gitStatus.length }) : t('files.modeChanges') },
+                  ]}
+                  value={gitMode ? 'changes' : 'files'}
+                  onChange={mode => {
+                    if ((mode === 'changes') !== gitMode && !(busy || actionBusy || gitBusy)) void toggleGitMode();
+                  }}
+                />
+              </View>
+            ) : null}
+            {!gitMode ? (
+              <View className="flex-row gap-2 px-2.5 pb-2.5">
+                <Button accessibilityLabel={t('files.parentDirectory')} className="size-11 rounded-[14px] bg-card px-0" disabled={!path || path === '/' || busy || actionBusy} size="content" variant="ghost" onPress={hapticPress(() => loadDirectory(parentRemotePath(path)))}>
+                  <ArrowLeft size={18} color={colors.text} />
                 </Button>
-              ) : null}
-              <Button accessibilityLabel={t('files.options')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy} variant="ghost" onPress={hapticPress(() => setSortMenuVisible(true))}>
-                <SlidersHorizontal size={18} color={colors.text} />
-              </Button>
-              <Button accessibilityLabel={t('files.upload')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || !path} variant="ghost" onPress={hapticPress(uploadFile)}>
-                {actionBusy ? <ActivityIndicator size="small" color={colors.primary} /> : <Upload size={18} color={colors.text} />}
-              </Button>
-              <Button accessibilityLabel={t('files.refresh')} className="h-12 w-12 rounded-none px-0" disabled={busy || actionBusy || gitBusy} variant="ghost" onPress={hapticPress(() => (gitMode ? refreshGitChanges() : loadDirectory(path || initialPath)))}>
-                <RefreshCw size={18} color={colors.text} />
-              </Button>
-            </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="h-11 flex-1 rounded-[14px] bg-card" contentContainerClassName="items-center px-3">
+                  {breadcrumbSegments(path || initialPath).map((segment, index, all) => (
+                    <Text
+                      key={segment.path}
+                      accessibilityRole={index < all.length - 1 ? 'link' : undefined}
+                      className={cn('font-mono text-[12.5px]', index < all.length - 1 ? 'text-text3' : 'text-foreground')}
+                      suppressHighlighting
+                      onPress={index < all.length - 1 && !busy ? () => { void loadDirectory(segment.path); } : undefined}>
+                      {segment.label}
+                    </Text>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : (
+              <View className="flex-row items-center gap-2 px-4 pb-2">
+                <GitBranch size={17} color={colors.textTertiary} />
+                <Text numberOfLines={1} className="min-w-0 flex-1 font-mono text-[12.5px] text-text2">
+                  {t('files.gitRemoteShort')}
+                </Text>
+                {gitBusy ? <ActivityIndicator size="small" color={colors.working} /> : null}
+              </View>
+            )}
             {busy ? (
               <FileLoadingState label={t('files.loading')} />
             ) : error ? (
@@ -809,18 +843,18 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                       <Button
                         accessibilityLabel={t(expanded ? 'files.gitCollapseFolder' : 'files.gitExpandFolder', { path: row.path })}
                         accessibilityState={{ expanded }}
-                        className="h-auto min-h-[52px] justify-start gap-2 rounded-none border-b border-border bg-background py-2 pr-2"
+                        className="h-auto min-h-[52px] justify-start gap-2 rounded-none border-b border-line bg-background py-2 pr-2"
                         style={indentStyle}
                         variant="ghost"
                         onPress={hapticPress(() => toggleGitDirectory(row.path))}
                       >
                         {expanded ? <ChevronDown size={17} color={colors.textSecondary} /> : <ChevronRight size={17} color={colors.textSecondary} />}
                         {expanded ? <FolderOpen size={18} color={colors.primary} /> : <Folder size={18} color={colors.primary} />}
-                        <Text numberOfLines={1} className="min-w-0 flex-1 text-left font-mono text-[11px] font-semibold text-foreground">
+                        <Text numberOfLines={1} className="min-w-0 flex-1 text-left font-mono text-[13px] font-semibold text-foreground">
                           {row.name}
                         </Text>
-                        <View className="min-w-7 items-center rounded-full bg-muted px-2 py-1">
-                          <Text className="font-mono text-[8px] font-bold text-muted-foreground">{row.changeCount}</Text>
+                        <View className="min-w-7 items-center rounded-full bg-raised px-2 py-1">
+                          <Text className="font-mono text-[11px] font-semibold text-text2">{row.changeCount}</Text>
                         </View>
                       </Button>
                     );
@@ -833,19 +867,19 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                       accessibilityLabel={t('files.gitOpenChange', {
                         path: status.path,
                       })}
-                      className="h-auto min-h-[58px] justify-start gap-3 rounded-none border-b border-border bg-background py-2 pr-2"
+                      className="h-auto min-h-[62px] justify-start gap-3 rounded-none border-b border-line bg-background py-2 pr-2"
                       style={indentStyle}
                       variant="ghost"
                       onPress={hapticPress(() => openGitChange(status))}
                     >
-                      <View className="size-9 items-center justify-center rounded-lg bg-muted">
-                        <FileCode2 size={18} color={tone} />
+                      <View className="items-center justify-center rounded-lg" style={{ width: 26, height: 26, backgroundColor: colorWithAlpha(tone, '29') }}>
+                        <Text className="font-mono text-xs font-semibold" style={{ color: tone }}>{label}</Text>
                       </View>
                       <View className="min-w-0 flex-1 items-start">
-                        <Text numberOfLines={1} className="text-left font-mono text-[11px] font-semibold text-foreground">
+                        <Text numberOfLines={1} className="text-left text-[15px] font-semibold text-foreground">
                           {row.name}
                         </Text>
-                        <Text numberOfLines={1} className="mt-0.5 font-mono text-[8px] text-muted-foreground">
+                        <Text numberOfLines={1} className="mt-0.5 font-mono text-[11.5px] text-text3">
                           {status.originalPath
                             ? t('files.gitRenamedFrom', {
                                 path: status.originalPath,
@@ -853,12 +887,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                             : status.path}
                         </Text>
                       </View>
-                      <View className="min-w-8 items-center rounded-full px-2 py-1" style={{ backgroundColor: colorWithAlpha(tone, '20') }}>
-                        <Text className="font-mono text-[9px] font-black" style={{ color: tone }}>
-                          {label}
-                        </Text>
-                      </View>
-                      <ChevronRight size={17} color={colors.textTertiary} />
+                      <ChevronRight size={17} color={colors.decor} />
                     </Button>
                   );
                 }}
@@ -873,7 +902,8 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                 <Text className="mt-2 text-center text-[12px] leading-[18px] text-muted-foreground">{t('files.gitCleanCopy')}</Text>
               </View>
             ) : sortedEntries.length ? (
-              <ScrollView className="flex-1" contentContainerClassName="px-3 py-1">
+              <ScrollView className="flex-1" contentContainerClassName="px-2.5 pb-4">
+                <View className="overflow-hidden rounded-3xl bg-card">
                 {sortedEntries.map(entry => {
                   const name = remoteEntryName(entry);
                   const directory = entry.kind === 'directory';
@@ -883,7 +913,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                       {({ actionsOpen, closeActions }) => (
                         <Button
                           accessibilityLabel={t(directory ? 'files.openDirectory' : 'files.openFile', { name })}
-                          className="h-auto min-h-[62px] justify-start gap-3 rounded-none bg-background px-2 py-2"
+                          className="h-auto min-h-[62px] justify-start gap-3 rounded-none bg-card px-3.5 py-2.5 active:bg-raised"
                           disabled={Boolean(deletingPath)}
                           variant="ghost"
                           onPress={hapticPress(() => {
@@ -891,7 +921,7 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                             else reportBackgroundFailure(openEntry(entry), 'remote-entry-open');
                           })}
                         >
-                          <View className="size-9 items-center justify-center rounded-lg bg-muted">
+                          <View className="items-center justify-center" style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: directory ? statusTint(colors.primary, 0.14) : colors.raised }}>
                             {directory ? (
                               <Folder size={18} color={colors.primary} />
                             ) : kind === 'image' || kind === 'svg' ? (
@@ -907,20 +937,21 @@ export function RemoteFileManager({ visible, client, hostId, initialPath, initia
                             )}
                           </View>
                           <View className="min-w-0 flex-1 items-start">
-                            <Text numberOfLines={1} className="text-left text-[13px] font-semibold text-foreground">
+                            <Text numberOfLines={1} className="text-left text-[15px] font-semibold text-foreground">
                               {name}
                             </Text>
-                            <Text numberOfLines={1} className="mt-0.5 text-[8px] text-muted-foreground">
+                            <Text numberOfLines={1} className="mt-0.5 text-[12.5px] text-text3">
                               {directory ? t('files.directory') : formatRemoteFileSize(entry.size ?? -1)}
                               {formatRemoteModificationDate(entry.modifiedAt) ? ` · ${formatRemoteModificationDate(entry.modifiedAt)}` : ''}
                             </Text>
                           </View>
-                          <ChevronRight size={17} color={colors.textTertiary} />
+                          <ChevronRight size={17} color={colors.decor} />
                         </Button>
                       )}
                     </SwipeableRemoteFileRow>
                   );
                 })}
+                </View>
               </ScrollView>
             ) : entries.length && !showHiddenFiles ? (
               <HiddenOnlyState onShow={() => updateShowHiddenFiles(true)} />
@@ -1105,7 +1136,7 @@ function SwipeableRemoteFileRow({ children, deleting, disabled, name, onDelete }
   };
 
   return (
-    <View className="relative min-h-[62px] overflow-hidden border-b border-border">
+    <View className="relative min-h-[62px] overflow-hidden border-b border-line">
       <Animated.View accessibilityElementsHidden={!actionsOpen} className="absolute inset-y-0 right-0 overflow-hidden" importantForAccessibility={actionsOpen ? 'auto' : 'no-hide-descendants'} style={actionRevealStyle}>
         <Button accessibilityLabel={t('files.deleteEntry', { name })} className="absolute inset-y-0 right-0 h-full w-[84px] flex-col gap-1 rounded-none" disabled={disabled} size="content" variant="destructive" onPress={hapticPress(runDelete)}>
           {deleting ? <ActivityIndicator color="white" size="small" /> : <Icon as={Trash2} className="text-destructive-foreground" size={19} />}

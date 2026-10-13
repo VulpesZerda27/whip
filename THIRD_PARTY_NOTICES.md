@@ -40,6 +40,10 @@ SOFTWARE.
 
 ## Bundled fonts
 
+- [Instrument Sans](https://github.com/Instrument/instrument-sans), copyright
+  2022 The Instrument Sans Project Authors, is distributed under the [SIL Open
+  Font License 1.1](assets/licenses/instrument-sans-OFL-1.1.txt). The bundled
+  static weights are instances of the upstream variable font.
 - [Inter](https://github.com/rsms/inter), copyright (c) 2016 The Inter
   Project Authors, is distributed under the [SIL Open Font License
   1.1](assets/licenses/inter-OFL-1.1.txt).

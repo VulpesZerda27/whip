@@ -383,11 +383,11 @@ describe('AgentChatView viewport insets', () => {
     const latestButton = renderer.root.find(
       node => node.props.accessibilityLabel === 'Jump to latest',
     );
-    expect(latestButton.props.style[0]).toEqual({ bottom: 297 });
+    // Nightfall “Latest” pill: centered above the composer inset, icon plus label.
+    expect(latestButton.props.style).toEqual(expect.objectContaining({ bottom: 297 }));
     expect(latestButton.props.className.split(' ')).toContain('self-center');
-    expect(latestButton.props.size).toBe('icon');
-    expect(latestButton.findAll(node => String(node.type) === 'ArrowDown')).toHaveLength(1);
-    expect(latestButton.findAll(node => String(node.type) === 'Text')).toHaveLength(0);
+    expect(latestButton.findAll(node => String(node.type) === 'ArrowDownToLine')).toHaveLength(1);
+    expect(latestButton.findAll(node => String(node.type) === 'Text').flatMap(node => node.children)).toContain('Latest');
   });
 });
 

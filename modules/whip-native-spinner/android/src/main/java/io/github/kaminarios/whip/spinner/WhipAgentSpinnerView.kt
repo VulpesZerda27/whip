@@ -4,19 +4,21 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.view.Choreographer
 import expo.modules.kotlin.AppContext
 import expo.modules.kotlin.views.ExpoView
-import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.min
-import kotlin.math.sin
 
 class WhipAgentSpinnerView(
   context: Context,
   appContext: AppContext,
 ) : ExpoView(context, appContext) {
-  private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+  private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeCap = Paint.Cap.ROUND
+  }
+  private val arcBounds = RectF()
   private var animationEnabled = true
   private var rotationDegrees = 0f
   private var rotationDurationMs = DEFAULT_ROTATION_DURATION_MS
@@ -92,26 +94,19 @@ class WhipAgentSpinnerView(
     val extent = min(width, height).toFloat()
     if (extent <= 0f) return
 
-    val centerX = width / 2f
-    val centerY = height / 2f
-    val orbitRadius = extent * ORBIT_RADIUS_RATIO
-    val dotRadius = extent * DOT_RADIUS_RATIO
+    // Nightfall ring: a faint full track with one rotating quarter arc.
+    val strokeWidth = extent * STROKE_RATIO
+    val inset = strokeWidth / 2f
+    val left = (width - extent) / 2f + inset
+    val top = (height - extent) / 2f + inset
+    arcBounds.set(left, top, left + extent - strokeWidth, top + extent - strokeWidth)
+    paint.strokeWidth = strokeWidth
     val baseAlpha = Color.alpha(paint.color)
 
-    canvas.save()
-    canvas.rotate(rotationDegrees, centerX, centerY)
-    TRAIL_OPACITIES.forEachIndexed { trailIndex, opacity ->
-      val angle = -PI / 2.0 - trailIndex * POSITION_ANGLE_RADIANS
-      paint.alpha = (baseAlpha * opacity).toInt().coerceIn(0, 255)
-      canvas.drawCircle(
-        centerX + cos(angle).toFloat() * orbitRadius,
-        centerY + sin(angle).toFloat() * orbitRadius,
-        dotRadius,
-        paint,
-      )
-    }
+    paint.alpha = (baseAlpha * TRACK_OPACITY).toInt().coerceIn(0, 255)
+    canvas.drawArc(arcBounds, 0f, 360f, false, paint)
     paint.alpha = baseAlpha
-    canvas.restore()
+    canvas.drawArc(arcBounds, rotationDegrees - 90f - ARC_SWEEP_DEGREES / 2f, ARC_SWEEP_DEGREES, false, paint)
   }
 
   private fun updateAnimationState() {
@@ -142,9 +137,8 @@ class WhipAgentSpinnerView(
     const val MAX_FRAMES_PER_SECOND = 120
     const val NANOS_PER_SECOND = 1_000_000_000L
     const val NANOS_PER_MILLISECOND = 1_000_000L
-    const val ORBIT_RADIUS_RATIO = 9.5f / 24f
-    const val DOT_RADIUS_RATIO = 2f / 24f
-    const val POSITION_ANGLE_RADIANS = 2.0 * PI / 10.0
-    val TRAIL_OPACITIES = floatArrayOf(1f, 0.72f, 0.5f, 0.32f, 0.16f)
+    const val STROKE_RATIO = 2f / 16f
+    const val TRACK_OPACITY = 0.22f
+    const val ARC_SWEEP_DEGREES = 90f
   }
 }
