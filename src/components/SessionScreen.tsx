@@ -151,6 +151,9 @@ import { ChatSessionActions } from './ChatSessionActions';
 import { shortHomePath } from '../lib/paths';
 import { useAppGlassEnabled } from './GlassSurface';
 
+/** Longest a delivered prompt shows Working before the agent reports its status. */
+const AWAITING_WORK_LIMIT_MS = 15_000;
+
 interface Props {
   draftSaveError?: string | null;
   onToggleReadAloud?: () => void;
@@ -306,6 +309,17 @@ export function SessionScreen({
   const composerQueuesRef = useRef(
     new Map<string, readonly TerminalComposerQueueItem[]>(),
   );
+  // After delivery the agent's own status hook takes a moment to report work.
+  // Until the pane status changes (or a safety limit passes), show Working.
+  const [awaitingWork, setAwaitingWork] = useState<
+    ReadonlyMap<string, { since: number; status: string }>
+  >(() => new Map());
+  const paneStatusByTerminalRef = useRef(new Map<string, string>());
+  paneStatusByTerminalRef.current = new Map(
+    snapshot.panes.flatMap(pane =>
+      pane.terminal_id ? [[pane.terminal_id, pane.agent_status || 'unknown'] as const] : [],
+    ),
+  );
   const updateComposerQueue = useCallback(
     (terminalId: string, items: readonly TerminalComposerQueueItem[]) => {
       const previousQueue = composerQueuesRef.current.get(terminalId) ?? [];
@@ -316,6 +330,10 @@ export function SessionScreen({
           userCount = transcriptUserCount(view.state.transcript.turns);
       }
       const now = Date.now();
+      if (previousQueue.some(old => old.sending && !items.some(item => item.id === old.id))) {
+        const status = paneStatusByTerminalRef.current.get(terminalId) ?? 'unknown';
+        setAwaitingWork(current => new Map(current).set(terminalId, { since: now, status }));
+      }
       setComposerPrompts(current => {
         const existing = current.get(terminalId) ?? [];
         const byId = new Map(existing.map(prompt => [prompt.id, prompt]));
@@ -625,11 +643,35 @@ export function SessionScreen({
   // conversation's frame instead of an empty canvas until it does.
   // A delivered prompt means work has started, before the agent's hook reports it.
   const paneStatus = activePane?.agent_status || 'unknown';
+  const activeAwaitingWork = activeTerminalSession
+    ? awaitingWork.get(activeTerminalSession.terminalId)
+    : undefined;
   const chatHeaderStatus =
     (paneStatus === 'idle' || paneStatus === 'done') &&
-    activePendingPrompts?.some(prompt => prompt.state === 'sent')
+    (activePendingPrompts?.some(prompt => prompt.state === 'sent') ||
+      activeAwaitingWork?.status === paneStatus)
       ? 'working'
       : paneStatus;
+  const awaitingTerminalId = activeTerminalSession?.terminalId;
+  useEffect(() => {
+    if (!awaitingTerminalId || !activeAwaitingWork) return;
+    const forget = () => setAwaitingWork(current => {
+      if (current.get(awaitingTerminalId) !== activeAwaitingWork) return current;
+      const next = new Map(current);
+      next.delete(awaitingTerminalId);
+      return next;
+    });
+    // Any reported status change means the agent's own status is current again.
+    if (paneStatus !== activeAwaitingWork.status) {
+      forget();
+      return;
+    }
+    const timer = setTimeout(
+      forget,
+      Math.max(0, activeAwaitingWork.since + AWAITING_WORK_LIMIT_MS - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [activeAwaitingWork, awaitingTerminalId, paneStatus]);
   const chatTargetPending = Boolean(
     visible && preferChat && client && !activeTarget && !chatVisible && snapshot.server.running,
   );
@@ -822,6 +864,7 @@ export function SessionScreen({
     reportedChatFailureGenerationsRef.current.clear();
     composerQueuesRef.current.clear();
     setComposerPrompts(new Map());
+    setAwaitingWork(new Map());
   }, [hostSessionId]);
 
   useEffect(() => {

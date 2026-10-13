@@ -352,6 +352,8 @@ describe('AgentChatView viewport insets', () => {
     });
     expect(list.props.maintainVisibleContentPosition).toEqual({
       startRenderingFromBottom: true,
+      autoscrollToBottomThreshold: 0,
+      animateAutoScrollToBottom: false,
     });
     expect(list.props.onEndReachedThreshold).toBe(0);
     expect(list.props.estimatedItemSize).toBeUndefined();
@@ -1860,12 +1862,71 @@ describe('loading and pending prompts', () => {
     act(() => { renderer = create(view('sending')); });
     let rows!: ReactTestRenderer;
     act(() => { rows = create(renderedBlocks(renderer)); });
-    const prompt = rows.root.findByProps({ testID: 'pending-prompt' });
-    expect(prompt.findAllByProps({ children: 'Sending…' })).not.toHaveLength(0);
+    const bubble = () => rows.root.findByProps({ testID: 'pending-prompt' }).findByProps({ accessibilityLabel: 'Copy prompt' });
+    expect(bubble().props.style.opacity).toBeCloseTo(0.62);
+    // "Sending…" sits in the activity row below the prompt, not in an extra line.
+    expect(rows.root.findByProps({ testID: 'pending-prompt' }).findAllByProps({ children: 'Sending…' })).toHaveLength(0);
+    expect(rows.root.findAllByProps({ children: 'Sending…' })).not.toHaveLength(0);
+    expect(flatList(renderer).props.data.at(-1).type).toBe('thinking');
     act(() => { renderer.update(view('sent')); });
     act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(bubble().props.style.opacity).toBe(1);
     expect(rows.root.findAllByProps({ children: 'Sending…' })).toHaveLength(0);
+    expect(rows.root.findAllByProps({ children: 'Thinking…' })).not.toHaveLength(0);
     expect(flatList(renderer).props.data.at(-1).type).toBe('thinking');
     act(() => { rows.unmount(); renderer.unmount(); });
+  });
+});
+
+describe('keeping the end in view at layout commit', () => {
+  test('a list that grew while following the end is scrolled before the frame is drawn, not when scrolled away', () => {
+    const scrollToEnd = jest.fn();
+    const geometry = { content: 1_000, offset: 600 };
+    let renderer!: ReactTestRenderer;
+    const onReady = jest.fn();
+    act(() => {
+      renderer = create(chatView(chatState([TURN]), true, onReady), {
+        createNodeMock: element => element.type === 'FlashList'
+          ? {
+              scrollToEnd,
+              scrollToOffset: jest.fn(),
+              getChildContainerDimensions: () => ({ width: 400, height: geometry.content }),
+              getFirstItemOffset: () => 0,
+              getWindowSize: () => ({ width: 400, height: 400 }),
+              getAbsoluteLastScrollOffset: () => geometry.offset,
+            }
+          : null,
+      });
+    });
+    act(() => {
+      chatViewport(renderer).props.onLayout({ nativeEvent: { layout: { height: 400 } } });
+      flatList(renderer).props.onContentSizeChange(0, 1_000);
+      flatList(renderer).props.onScroll(scrollEvent(600, 1_000));
+      flatList(renderer).props.onViewableItemsChanged({
+        viewableItems: [{ item: finalBlock(renderer, TURN), isViewable: true }],
+      });
+      flatList(renderer).props.onLoad();
+    });
+    expect(onReady).toHaveBeenCalledTimes(1);
+    scrollToEnd.mockClear();
+    // Already at the end: nothing to do.
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    // A row was measured taller (a new prompt): keep the end in view now.
+    geometry.content = 1_080;
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+    scrollToEnd.mockClear();
+    // After the person scrolls up, growth must not pull them back down.
+    act(() => {
+      flatList(renderer).props.onScrollBeginDrag(scrollEvent(680, 1_080));
+      flatList(renderer).props.onScroll(scrollEvent(300, 1_080));
+      flatList(renderer).props.onScrollEndDrag(scrollEvent(300, 1_080));
+    });
+    geometry.offset = 300;
+    geometry.content = 1_200;
+    act(() => { flatList(renderer).props.onCommitLayoutEffect(); });
+    expect(scrollToEnd).not.toHaveBeenCalled();
+    act(() => renderer.unmount());
   });
 });

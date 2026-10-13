@@ -123,6 +123,11 @@ const SMALL_ICON_HIT_SLOP = 8;
 const NIX_EXECUTABLE_PREFIX = /\/nix\/store\/[^/\s"'`]+\/s?bin\//g;
 const CHAT_MAINTAIN_VISIBLE_CONTENT_POSITION = {
   startRenderingFromBottom: true,
+  // When exactly at the end (the follow state), the list keeps the end in view
+  // on the frame after a row is added or measured. Waiting for the native
+  // content-size event instead showed the new row too high for a few frames.
+  autoscrollToBottomThreshold: 0,
+  animateAutoScrollToBottom: false,
 } as const;
 const CHAT_VIEWABILITY_CONFIG = {
   itemVisiblePercentThreshold: 0,
@@ -179,15 +184,26 @@ function ChatBoundarySpacer({ height }: { height: number }) {
   );
 }
 
-function ThinkingIndicator({ active = true }: { active?: boolean }) {
+/**
+ * The activity row. While a prompt is still sending it reads "Sending…" under
+ * that prompt, keeping the same height so delivery does not move the list.
+ */
+function ThinkingIndicator({ active = true, sending = false }: { active?: boolean; sending?: boolean }) {
   const reduceMotion = useReducedMotion();
-  const progress = useDecorativeProgress(active && !reduceMotion, 800);
+  const progress = useDecorativeProgress(active && !sending && !reduceMotion, 800);
   const style = useAnimatedStyle(() => ({ opacity: reduceMotion ? 1 : 0.48 + (progress.value * 0.52) }), [reduceMotion]);
   return (
-    <View accessibilityLiveRegion="polite" className="mt-3 min-h-5 flex-row items-center">
-      <Animated.View style={style}>
-        <Text className="text-sm font-medium leading-5 text-text3">Thinking…</Text>
-      </Animated.View>
+    <View
+      accessibilityLiveRegion="polite"
+      className={cn('mt-3 min-h-5 flex-row items-center', sending && 'justify-end px-1')}
+    >
+      {sending
+        ? <Text className="text-[12px] leading-5 text-text3">Sending…</Text>
+        : (
+          <Animated.View style={style}>
+            <Text className="text-sm font-medium leading-5 text-text3">Thinking…</Text>
+          </Animated.View>
+        )}
     </View>
   );
 }
@@ -704,9 +720,9 @@ function formatDuration(start: number | undefined, end: number | undefined): str
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-const PENDING_PROMPT_CAPTIONS: Record<Exclude<PendingPromptState, 'sent'>, string> = {
+/** Sending and sent prompts report through the activity row below them instead. */
+const PENDING_PROMPT_CAPTIONS: Partial<Record<PendingPromptState, string>> = {
   queued: 'Waiting to send…',
-  sending: 'Sending…',
   failed: 'Not sent yet · retrying',
 };
 
@@ -726,15 +742,17 @@ function UserPrompt({ message, imageClient, directory, active, simpleChat, pendi
   const copyPrompt = () => copyText(text);
   if (!text) return null;
   const meta = formatTime(message.createdAt);
-  // Delivered prompts look final; the real transcript row replaces them in place.
-  const caption = pending && pending !== 'sent' ? PENDING_PROMPT_CAPTIONS[pending] : undefined;
+  const caption = pending ? PENDING_PROMPT_CAPTIONS[pending] : undefined;
+  // Only an undelivered prompt is faded; a delivered one looks final, because the
+  // transcript's own row replaces it in place.
+  const faded = pending === 'queued' || pending === 'sending' || pending === 'failed';
   return (
     <View className="ml-9 items-end" testID={pending ? 'pending-prompt' : undefined}>
       <Pressable
         accessibilityLabel="Copy prompt"
-        accessibilityHint={caption}
+        accessibilityHint={caption ?? (pending === 'sending' ? 'Sending' : undefined)}
         className="min-h-11 max-w-[86%] gap-2 bg-selection px-3.5 py-2.5"
-        style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomRightRadius: 6, borderBottomLeftRadius: 20, opacity: caption ? 0.62 : 1 }}
+        style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomRightRadius: 6, borderBottomLeftRadius: 20, opacity: faded ? 0.62 : 1 }}
         onLongPress={copyPrompt}>
         {parts.map(part => part.type === 'image'
           ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
@@ -834,7 +852,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
     switch (block.type) {
       case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} simpleChat={simpleChat} pending={block.pending} pendingError={block.pendingError} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
-      case 'thinking': return <ThinkingIndicator active={active} />;
+      case 'thinking': return <ThinkingIndicator active={active} sending={block.sending} />;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
       case 'changes': return <ChangedFiles turn={block.turn} expanded={expanded} onToggle={toggle} />;
       case 'diff': return <ToolFileDiffBlock file={block.file} />;
@@ -1016,6 +1034,23 @@ export function AgentChatView({
   }, [search.match, search.query, search.navigationRevision, searchPresentation, active]);
 
   const searchBarHeight = searchOpen ? chatSearchBarHeight(search.query) : 0;
+  // Runs after FlashList commits measured row layout, before the frame is drawn.
+  // While following the end, a grown list is scrolled in that same frame;
+  // waiting for the native content-size event left new rows briefly too high.
+  const keepEndInView = () => {
+    if (!active || !initialViewportRef.current.ready || !followEndRef.current) return;
+    const handle = list.current;
+    if (!handle) return;
+    const contentHeight = handle.getChildContainerDimensions().height + handle.getFirstItemOffset();
+    const viewportHeight = handle.getWindowSize().height;
+    const maximumOffset = contentHeight - viewportHeight;
+    if (maximumOffset > handle.getAbsoluteLastScrollOffset() + CHAT_SCROLL_OFFSET_EPSILON)
+      handle.scrollToEnd({ animated: false });
+  };
+  const commitListLayout = () => {
+    keepEndInView();
+    revealSearchMatch();
+  };
   const revealSearchMatch = () => {
     if (pendingSearch.current && active && initialViewportRef.current.ready) {
       const index = blocks.findIndex(block => block.id === pendingSearch.current);
@@ -1579,7 +1614,7 @@ export function AgentChatView({
       >
         <FlashList
           ref={list}
-          onCommitLayoutEffect={revealSearchMatch}
+          onCommitLayoutEffect={commitListLayout}
           initialScrollIndex={initialScrollIndex}
           data={blocks}
           keyExtractor={block => block.id}

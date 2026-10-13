@@ -48,6 +48,7 @@ import { ConnectRequiredScreen } from './ConnectRequiredScreen';
 import { useCodexHosts } from '../hooks/useCodexHosts';
 import { CodexChatScreen } from './CodexChatScreen';
 import { useAppForeground } from '../hooks/useAppForeground';
+import { useIdleWarmup } from '../hooks/useIdleWarmup';
 import { updateCodexActivity } from '../lib/codexInbox';
 import { openCodexTerminal } from '../lib/codexHerdr';
 import { useCodexReadSync } from '../hooks/useCodexReadSync';
@@ -64,6 +65,8 @@ import { SettingsScreen } from './SettingsScreen';
 import { ScreenUpdates } from './ScreenUpdates';
 
 const NavigationBlurTarget = Platform.OS === 'android' ? View : BlurTargetView;
+/** Lets the Chats list settle before the hidden session view is created. */
+const SESSION_VIEW_WARM_DELAY_MS = 800;
 
 interface AppShellProps {
   preferences: DevicePreferencesController;
@@ -175,6 +178,13 @@ export function AppShell({
   const chatActivity = chatLibrary.value.activity;
   const chatRows = buildChatRows(sessions.presentationSessions, codexHosts, chatActivity);
   const chatsBadge = chatDockBadge(chatRows, chatActivity);
+  // A Claude chat renders inside the session view, whose terminal renderer owns
+  // a WebView. Creating that tree on the first tap left the screen blank for a
+  // moment, so it is created in the background once Chats is idle instead.
+  const claudeChatAvailable = chatRows.some(row => !row.thread && !row.terminalOnly);
+  const sessionViewWarmable =
+    claudeChatAvailable && activeSession?.connectionStatus === 'ready' && !security.locked;
+  const sessionViewWarm = useIdleWarmup(sessionViewWarmable, SESSION_VIEW_WARM_DELAY_MS);
   // In-app heads-up: a chat you are not viewing starts needing you or finishes.
   const [headsUp, setHeadsUp] = useState<ChatHeadsUp | null>(null);
   const chatStatusesRef = useRef<Map<string, string> | null>(null);
@@ -432,7 +442,7 @@ export function AppShell({
                 }}
               /> : null}
               {codexVisible && !codexHost ? <ConnectRequiredScreen destination="Codex chat" onPickHost={() => navigation.selectTab('hosts')} /> : null}
-              {(navigation.mountedTabs.has('terminal') || navigation.mountedTabs.has('chat')) &&
+              {(navigation.mountedTabs.has('terminal') || navigation.mountedTabs.has('chat') || sessionViewWarm) &&
                 !codexVisible && activeSession && (
                   <AgentStatusAnimationProvider enabled={terminalVisible}>
                     <LiveSessionView

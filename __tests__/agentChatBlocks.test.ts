@@ -111,13 +111,20 @@ describe('pending prompts', () => {
     const row = blocks.find(block => block.id === 'pending:p1');
     expect(row).toMatchObject({ type: 'user', pending: 'sending', spacing: 'turn' });
     expect(row?.type === 'user' && row.message.parts.map(part => part.type)).toEqual(['image', 'text']);
-    expect(blocks.at(-1)?.id).toBe('pending:p1');
+    // The activity row already holds the space the transcript's own row will use.
+    expect(blocks.at(-1)).toMatchObject({ id: 'pending:thinking', type: 'thinking', sending: true, spacing: 'part' });
   });
 
   it('move the activity row below the delivered prompt', () => {
     const blocks = transcriptBlocks([chatTurn({ status: 'working' })], true, new Set(), [pending('sent')]);
     expect(blocks.filter(block => block.type === 'thinking').map(block => block.id)).toEqual(['pending:thinking']);
-    expect(blocks.at(-1)?.id).toBe('pending:thinking');
+    expect(blocks.at(-1)).toMatchObject({ id: 'pending:thinking', sending: false });
+  });
+
+  it('keep the same rows from sending to delivery, so the list does not move', () => {
+    const sending = transcriptBlocks([chatTurn({})], false, new Set(), [pending('sending')]);
+    const sent = transcriptBlocks([chatTurn({})], false, new Set(), [pending('sent')]);
+    expect(sent.map(block => [block.id, block.type, block.spacing])).toEqual(sending.map(block => [block.id, block.type, block.spacing]));
   });
 
   it('do not hide the agent activity row while only waiting to send', () => {

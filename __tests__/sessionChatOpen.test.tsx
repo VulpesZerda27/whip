@@ -1533,3 +1533,42 @@ test('a chat chosen before its terminal binding exists shows the conversation fr
   await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat={false} terminalTargets={[]} />); });
   expect(renderer.root.findAllByProps({ testID: 'chat-opening' })).toHaveLength(0);
 });
+
+test('a delivered Claude prompt shows Working until the pane reports its own status', async () => {
+  const host = setup('claude');
+  const binding = bindChat(host, 'claude');
+  host.native.startAgentChat.mockImplementation(() => {
+    binding.state = { ...binding.state, status: 'live', revision: 1 };
+    return { type: 'started', state: binding.state };
+  });
+  await act(async () => { renderer = create(<SessionScreen {...host.props} preferChat />); });
+  revealChat();
+  const header = () => renderer.root.findAllByType('StatusBadge' as never)[0].props.status;
+  const queue = (items: { id: number; historyEntry: string; sending: boolean; error: string | null }[]) =>
+    act(() => { ui('TerminalScreen').props.onComposerQueueChange('terminal-1', items); });
+  const withStatus = (status: 'idle' | 'working') => {
+    host.pane.agent_status = status;
+    const snapshot = { ...host.props.snapshot, panes: [{ ...host.pane }] };
+    act(() => { renderer.update(<SessionScreen {...host.props} snapshot={snapshot} preferChat />); });
+  };
+  expect(header()).toBe('idle');
+  queue([{ id: 1, historyEntry: 'Go', sending: true, error: null }]);
+  queue([]);
+  expect(header()).toBe('working');
+  const user = { id: 'user-1', role: 'user' as const, parts: [{ type: 'text' as const, id: 'text-1', text: 'Go' }], diffs: [] };
+  act(() => {
+    host.handlers.get(binding.terminalId)?.({
+      key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation, revision: 2,
+      deltas: [
+        { type: 'message-upserted', index: 0, message: user },
+        { type: 'turn-upserted', index: 0, turn: { id: 'turn-1', userMessageId: 'user-1', assistantMessageIds: [], status: 'working', diffs: [] } },
+      ],
+    } as never);
+  });
+  // The bubble was replaced by the transcript, but the hook has not reported yet.
+  expect(header()).toBe('working');
+  withStatus('working');
+  expect(header()).toBe('working');
+  withStatus('idle');
+  expect(header()).toBe('idle');
+});

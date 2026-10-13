@@ -4,7 +4,7 @@ import type { PendingPrompt, PendingPromptState } from './pendingPrompts';
 type BlockContent =
   | { type: 'user'; message: TranscriptMessage; pending?: PendingPromptState; pendingError?: string }
   | { type: 'part'; part: TranscriptPart; streaming: boolean }
-  | { type: 'thinking' }
+  | { type: 'thinking'; sending?: boolean }
   | { type: 'error'; error: string }
   | { type: 'changes'; turn: TranscriptTurn }
   | { type: 'diff'; file: TranscriptTurn['diffs'][number] }
@@ -93,8 +93,17 @@ export function transcriptBlocks(
       pendingError: prompt.error,
     });
   }
-  if (delivering && (agentWorking || pending.some(prompt => prompt.state === 'sent'))) {
-    blocks.push({ type: 'thinking', id: 'pending:thinking', turnId: 'pending', spacing: 'part' });
+  // The activity row arrives with the prompt and reads "Sending…" until it is
+  // delivered. The transcript's own prompt and activity row then replace these
+  // rows with the same layout, so neither step moves the list.
+  if (delivering) {
+    blocks.push({
+      type: 'thinking',
+      id: 'pending:thinking',
+      turnId: 'pending',
+      spacing: 'part',
+      sending: !agentWorking && !pending.some(prompt => prompt.state === 'sent'),
+    });
   }
   return blocks;
 }
