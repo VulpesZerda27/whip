@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import type {
   NativeAgentInteractionPrompt,
@@ -39,10 +39,16 @@ export function AgentInteractionControls({
   target,
   enabled,
   onOpenTerminal,
+  idleFallback,
 }: {
   target: AgentInteractionTarget;
   enabled: boolean;
   onOpenTerminal?: () => void;
+  /**
+   * Shown instead of the prompt card until a live prompt is found. Without it,
+   * the card appears while the first read is in flight (the agent is blocked).
+   */
+  idleFallback?: ReactNode;
 }) {
   const { native, terminalId, bindingToken } = target;
   const { colors } = useTheme();
@@ -160,8 +166,9 @@ export function AgentInteractionControls({
   };
 
   if (!enabled || !foreground) return null;
-  if (loaded && !prompt && !error && !responseError) return null;
   const displayedError = error || responseError;
+  if (idleFallback !== undefined && !prompt && !displayedError) return <>{idleFallback}</>;
+  if (loaded && !prompt && !displayedError) return null;
   const queued = prompt?.kind === NativeAgentInteractionKind.QueuedQuestion;
   const menu = prompt?.kind === NativeAgentInteractionKind.Menu;
   const showAnswerControls = menu || showTerminalControls;

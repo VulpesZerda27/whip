@@ -143,6 +143,9 @@ const str = (value: unknown): string =>
 const array = (value: unknown): unknown[] =>
   Array.isArray(value) ? value : [];
 export const codexChatKey = (threadId: string) => `codex-thread:${threadId}`;
+const CODEX_STREAMING_POLL_MS = 120;
+const CODEX_IDLE_POLL_MS = 300;
+const CODEX_OFFLINE_POLL_MS = 4000;
 
 export function codexStatus(thread: CodexRecord, done = false): AgentStatus {
   const status = thread.status;
@@ -266,11 +269,63 @@ function itemParts(item: CodexItem): TranscriptPart[] {
   ];
 }
 
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
+  if (Array.isArray(a)) {
+    return (
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((value, index) => sameValue(value, b[index]))
+    );
+  }
+  if (Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every(key => sameValue(left[key], right[key]))
+  );
+}
+
+function sameTurn(a: TranscriptTurn, b: TranscriptTurn): boolean {
+  return (
+    a.status === b.status &&
+    a.startedAt === b.startedAt &&
+    a.completedAt === b.completedAt &&
+    a.user === b.user &&
+    a.assistants.length === b.assistants.length &&
+    a.assistants.every((message, index) => message === b.assistants[index]) &&
+    sameValue(a.diffs, b.diffs)
+  );
+}
+
+const sameList = <T,>(a: readonly T[], b: readonly T[]) =>
+  a.length === b.length && a.every((value, index) => value === b[index]);
+
 export function projectCodex(
   thread: CodexRecord,
   rawTurns: CodexTurn[],
   status: AgentChatState['status'] = 'live',
+  previous?: AgentChatState,
 ): AgentChatState {
+  // Unchanged messages and turns keep their previous identity, so rows that did
+  // not change are skipped by the memoized renderer while a reply streams.
+  const previousMessages = new Map(
+    previous?.transcript.messages.map(message => [message.id, message]),
+  );
+  const previousTurns = new Map(
+    previous?.transcript.turns.map(turn => [turn.id, turn]),
+  );
+  const reuseMessage = (message: TranscriptMessage) => {
+    const before = previousMessages.get(message.id);
+    return before && sameValue(before, message) ? before : message;
+  };
+  const reuseTurn = (turn: TranscriptTurn) => {
+    const before = previousTurns.get(turn.id);
+    return before && sameTurn(before, turn) ? before : turn;
+  };
   const messages: TranscriptMessage[] = [];
   const turns: TranscriptTurn[] = [];
   for (const turn of rawTurns) {
@@ -290,18 +345,18 @@ export function projectCodex(
       diffs: [],
     };
     for (const item of turn.items ?? []) {
-      const message: TranscriptMessage = {
+      const message = reuseMessage({
         id: `${turn.id}:${item.id}`,
         role: item.type === 'userMessage' ? 'user' : 'assistant',
         parts: itemParts(item),
         diffs: [],
         createdAt: turn.startedAt ?? undefined,
-      };
+      });
       if (message.role === 'user') {
         // A steer is another user message inside the same daemon turn. The shared
         // renderer groups one user per display turn, so split only the presentation.
         if (projected.user || projected.assistants.length) {
-          turns.push({ ...projected, status: 'idle', completedAt: undefined });
+          turns.push(reuseTurn({ ...projected, status: 'idle', completedAt: undefined }));
           projected = {
             ...projected,
             id: `${turn.id}:${item.id}`,
@@ -314,7 +369,7 @@ export function projectCodex(
       messages.push(message);
     }
     if (turn.error) {
-      const error: TranscriptMessage = {
+      const error = reuseMessage({
         id: `${turn.id}:error`,
         role: 'assistant',
         parts: [
@@ -326,22 +381,49 @@ export function projectCodex(
           },
         ],
         diffs: [],
-      };
+      });
       messages.push(error);
       projected.assistants.push(error);
     }
-    turns.push(projected);
+    turns.push(reuseTurn(projected));
   }
+  const info = { id: thread.id, title: thread.name, directory: thread.cwd };
+  const before = previous?.transcript;
   return {
     sessionId: thread.id,
     status,
     transcript: {
       sessionId: thread.id,
-      info: { id: thread.id, title: thread.name, directory: thread.cwd },
-      messages,
-      turns,
+      info: before?.info && sameValue(before.info, info) ? before.info : info,
+      messages: before && sameList(before.messages, messages) ? before.messages : messages,
+      turns: before && sameList(before.turns, turns) ? before.turns : turns,
     },
   };
+}
+
+/** True when a projection would render exactly like the previous one. */
+function sameChat(a: AgentChatState | undefined, b: AgentChatState): boolean {
+  if (!a) return false;
+  return (
+    a.status === b.status &&
+    a.error === b.error &&
+    a.transcript.info === b.transcript.info &&
+    a.transcript.messages === b.transcript.messages &&
+    a.transcript.turns === b.transcript.turns
+  );
+}
+
+function sameThread(a: CodexThread | undefined, b: CodexThread): boolean {
+  if (!a) return false;
+  return (
+    a.id === b.id &&
+    a.name === b.name &&
+    a.cwd === b.cwd &&
+    a.updatedAt === b.updatedAt &&
+    a.status === b.status &&
+    a.model === b.model &&
+    a.effort === b.effort
+  );
 }
 
 /** One connection per host. Browsing is read-only; only an explicitly opened chat is resumed. */
@@ -369,6 +451,7 @@ export class CodexDaemonClient {
   private loading = new Map<string, Promise<void>>();
   private buffered = new Map<string, CodexEvent[]>();
   private snapshotCursor = new Map<string, number>();
+  private streaming = false;
   constructor(private native: CodexTransport) {}
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -449,19 +532,26 @@ export class CodexDaemonClient {
         reasoningEffort: thread.reasoningEffort ?? previous?.reasoningEffort,
       });
     }
+    const current = new Map(this.snapshot.threads.map(t => [t.id, t]));
+    const next = [...threads.values()].map(t => {
+      const value = codexThread(this.metadata.get(t.id)!, this.done.has(t.id));
+      const before = current.get(t.id);
+      return before && sameThread(before, value) ? before : value;
+    });
+    // A periodic refresh that finds nothing new must not re-render every screen.
+    const unchanged = sameList(this.snapshot.threads, next);
+    if (unchanged && this.snapshot.connected && !this.snapshot.error) return;
     this.publish({
       connected: true,
       error: undefined,
-      threads: [...threads.values()].map(t =>
-        codexThread(this.metadata.get(t.id)!, this.done.has(t.id)),
-      ),
+      threads: unchanged ? this.snapshot.threads : next,
     });
   }
   start() {
     if (this.running) return;
     this.running = true;
     this.failures = 0;
-    this.publish({ error: undefined });
+    if (this.snapshot.error) this.publish({ error: undefined });
     this.refreshAt = 0;
     this.unsubscribeWake = this.native.subscribeCodexActivity?.(() => {
       void this.tick();
@@ -474,12 +564,18 @@ export class CodexDaemonClient {
     clearTimeout(this.timer);
     this.ticking = this.poll().finally(() => {
       this.ticking = undefined;
+      // Draining the native queue is local, so a reply that is still streaming
+      // is polled sooner; an idle connection keeps the slower cadence.
       if (this.running)
         this.timer = setTimeout(
           () => {
             void this.tick();
           },
-          this.snapshot.connected ? 300 : 4000,
+          !this.snapshot.connected
+            ? CODEX_OFFLINE_POLL_MS
+            : this.streaming
+              ? CODEX_STREAMING_POLL_MS
+              : CODEX_IDLE_POLL_MS,
         );
     });
     return this.ticking;
@@ -497,7 +593,8 @@ export class CodexDaemonClient {
       if (epoch !== this.epoch) return;
       if (packet.connectionId !== this.connectionId)
         throw new Error('Codex connection changed');
-      for (const event of packet.events) this.event(event);
+      this.streaming = packet.events.length > 0;
+      this.applyEvents(packet.events);
       const requests = packet.requests.map(r => ({
         ...r,
         connectionId: packet.connectionId,
@@ -572,13 +669,7 @@ export class CodexDaemonClient {
       this.openThreads.add(id);
       const queued = this.buffered.get(id) ?? [];
       this.buffered.delete(id);
-      for (const event of queued) this.event(event);
-      this.project(id);
-      this.publish({
-        threads: this.snapshot.threads.map(t =>
-          t.id === id ? codexThread(result.thread, this.done.has(id)) : t,
-        ),
-      });
+      this.applyEvents(queued, [id]);
     } catch (error) {
       this.buffered.delete(id);
       throw error;
@@ -587,25 +678,67 @@ export class CodexDaemonClient {
   isOpen(id: string) {
     return this.openThreads.has(id) && this.snapshot.connected;
   }
-  private project(id: string) {
+  /** The thread's next projection, or undefined when it would render the same. */
+  private projectChat(id: string): AgentChatState | undefined {
     const metadata = this.metadata.get(id);
-    if (!metadata) return;
-    const chat = projectCodex(metadata, this.turns.get(id) ?? []);
+    if (!metadata) return undefined;
+    const previous = this.snapshot.chats[id];
+    const chat = projectCodex(metadata, this.turns.get(id) ?? [], 'live', previous);
+    return sameChat(previous, chat) ? undefined : chat;
+  }
+  private project(id: string) {
+    const chat = this.projectChat(id);
+    if (!chat) return;
     chat.revision = this.snapshot.revision + 1;
     this.publish({ chats: { ...this.snapshot.chats, [id]: chat } });
   }
   event(event: CodexEvent) {
+    this.applyEvents([event]);
+  }
+  /**
+   * Applies a poll's events, then projects each affected thread once and
+   * publishes once. Streaming deltas arrive in bursts; projecting and
+   * re-rendering per delta made long conversations stutter.
+   */
+  private applyEvents(events: readonly CodexEvent[], forced: readonly string[] = []) {
+    const touched = new Set(forced);
+    for (const event of events) {
+      const id = this.applyEvent(event);
+      if (id) touched.add(id);
+    }
+    let chats = this.snapshot.chats;
+    let threads = this.snapshot.threads;
+    for (const id of touched) {
+      const chat = this.turns.has(id) ? this.projectChat(id) : undefined;
+      if (chat) {
+        if (chats === this.snapshot.chats) chats = { ...chats };
+        chat.revision = this.snapshot.revision + 1;
+        chats[id] = chat;
+      }
+      const meta = this.metadata.get(id);
+      const index = meta ? threads.findIndex(t => t.id === id) : -1;
+      if (index < 0) continue;
+      const thread = codexThread(meta!, this.done.has(id));
+      if (sameThread(threads[index], thread)) continue;
+      if (threads === this.snapshot.threads) threads = [...threads];
+      threads[index] = thread;
+    }
+    if (chats !== this.snapshot.chats || threads !== this.snapshot.threads)
+      this.publish({ chats, threads });
+  }
+  /** Applies one event to the retained daemon state; returns its thread when applied. */
+  private applyEvent(event: CodexEvent): string | undefined {
     const p = event.params ?? {};
     const id = p.threadId ?? p.thread?.id;
-    if (!id) return;
+    if (!id) return undefined;
     if (
       typeof event._whipSeq === 'number' &&
       event._whipSeq <= (this.snapshotCursor.get(id) ?? 0)
     )
-      return;
+      return undefined;
     if (this.buffered.has(id)) {
       this.buffered.get(id)!.push(event);
-      return;
+      return undefined;
     }
     if (event.method === 'thread/started') this.metadata.set(id, p.thread!);
     if (event.method === 'turn/started') this.done.delete(id);
@@ -682,15 +815,8 @@ export class CodexDaemonClient {
           }
         }
       }
-      this.project(id);
     }
-    this.publish({
-      threads: this.snapshot.threads.map(t =>
-        t.id === id && this.metadata.has(id)
-          ? codexThread(this.metadata.get(id)!, this.done.has(id))
-          : t,
-      ),
-    });
+    return id;
   }
   async create(
     cwd: string,

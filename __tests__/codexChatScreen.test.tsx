@@ -230,3 +230,73 @@ test('the Nightfall header names the thread, offers Remote files at its director
   act(() => { files.onPress(); });
   expect(openFile).toHaveBeenCalledWith(undefined, '/srv/project');
 });
+
+test('a sent prompt appears at once, frees the composer, and yields to the transcript echo', async () => {
+  const backend = daemon();
+  const listeners = new Set<() => void>();
+  backend.subscribe = ((listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); }) as never;
+  let deliver!: () => void;
+  backend.send.mockImplementationOnce(() => new Promise<void>(resolve => { deliver = resolve; }));
+  await act(async () => {
+    renderer = create(
+      <CodexChatScreen
+        hostId="host"
+        threadId="exact"
+        hostName="Server"
+        daemon={backend as unknown as CodexDaemonClient}
+        client={{} as HerdrClient}
+        onOpenFile={jest.fn()}
+        onTerminal={jest.fn()}
+        onConsumeDraft={jest.fn()}
+      />,
+    );
+  });
+  const composer = () => renderer.root.find(n => String(n.type) === 'Composer');
+  const chat = () => renderer.root.find(n => String(n.type) === 'AgentChatView');
+  act(() => { composer().props.onChangeText('Ship it'); });
+  await act(async () => { composer().props.actions.onSend(); });
+  expect(composer().props.initialValue).toBe('');
+  expect(composer().props.editable).toBeUndefined();
+  expect(chat().props.pendingPrompts).toEqual([
+    expect.objectContaining({ text: 'Ship it', state: 'sending', baseline: 0 }),
+  ]);
+  expect(composerDraftStorage.save).not.toHaveBeenCalledWith('host', 'codex-thread:exact', '');
+  await act(async () => { deliver(); });
+  expect(chat().props.pendingPrompts).toEqual([
+    expect.objectContaining({ text: 'Ship it', state: 'sent' }),
+  ]);
+  expect(composerDraftStorage.save).toHaveBeenCalledWith('host', 'codex-thread:exact', '');
+  const user = { id: 'u', role: 'user', parts: [{ type: 'text', id: 'u', text: 'Ship it' }], diffs: [] };
+  await act(async () => {
+    backend.snapshot = {
+      ...backend.snapshot,
+      chats: { exact: { sessionId: 'exact', status: 'live', transcript: { sessionId: 'exact', messages: [user], turns: [{ id: 't', user, assistants: [], status: 'working', diffs: [] }] } } },
+    };
+    listeners.forEach(listener => listener());
+  });
+  expect(chat().props.pendingPrompts).toEqual([]);
+});
+
+test('a failed send withdraws its bubble and returns the message to the composer', async () => {
+  const backend = daemon();
+  backend.send.mockRejectedValueOnce(new Error('Delivery unknown'));
+  await act(async () => {
+    renderer = create(
+      <CodexChatScreen
+        hostId="host"
+        threadId="exact"
+        hostName="Server"
+        daemon={backend as unknown as CodexDaemonClient}
+        client={{} as HerdrClient}
+        onOpenFile={jest.fn()}
+        onTerminal={jest.fn()}
+        onConsumeDraft={jest.fn()}
+      />,
+    );
+  });
+  const composer = () => renderer.root.find(n => String(n.type) === 'Composer');
+  act(() => { composer().props.onChangeText('Try again later'); });
+  await act(async () => { composer().props.actions.onSend(); });
+  expect(composer().props.initialValue).toBe('Try again later');
+  expect(renderer.root.find(n => String(n.type) === 'AgentChatView').props.pendingPrompts).toEqual([]);
+});

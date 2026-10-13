@@ -47,3 +47,34 @@ test('closed Codex history cannot generate new notifications, including after a 
   expect(alertAgent).toHaveBeenCalledTimes(1);
   act(() => renderer.unmount());
 });
+
+test('streamed transcript updates do not re-render the app shell; list changes do', async () => {
+  const threads = [{ id: 'open', name: 'open', cwd: '/p', updatedAt: 1, status: 'working' as const }];
+  let notify!: () => void;
+  const client = { snapshot: { connected: true, threads, requests: [], chats: {}, revision: 1 } as unknown as CodexSnapshot,
+    subscribe: (listener: () => void) => { notify = listener; return () => {}; }, start: jest.fn(), stop: jest.fn() };
+  jest.mocked(codexClient).mockReturnValue(client as unknown as CodexDaemonClient);
+  const session = { id: 'session', hostId: 'host', host: { name: 'Server' }, connectionStatus: 'ready', hostState: { freshness: 'fresh' },
+    snapshot: { agents: [] } };
+  const sessions = { presentationSessions: [session], getClient: () => ({ native: {} }) };
+  let renders = 0;
+  function Harness() {
+    renders += 1;
+    useCodexHosts(sessions as unknown as SessionRuntimeController, true, { alertsEnabled: false, agentAlertLevel: 'regular', persistentAlertDurationSeconds: 30, ttsEnabled: false });
+    return null;
+  }
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<Harness />); });
+  const baseline = renders;
+  await act(async () => {
+    client.snapshot = { ...client.snapshot, chats: { open: {} }, revision: 2 } as unknown as CodexSnapshot;
+    notify();
+  });
+  expect(renders).toBe(baseline);
+  await act(async () => {
+    client.snapshot = { ...client.snapshot, threads: [{ ...threads[0], status: 'done' }], revision: 3 } as unknown as CodexSnapshot;
+    notify();
+  });
+  expect(renders).toBe(baseline + 1);
+  act(() => renderer.unmount());
+});

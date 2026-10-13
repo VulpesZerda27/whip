@@ -1,7 +1,8 @@
 import type { TranscriptMessage, TranscriptPart, TranscriptToolPart, TranscriptTurn } from '../agentChat';
+import type { PendingPrompt, PendingPromptState } from './pendingPrompts';
 
 type BlockContent =
-  | { type: 'user'; message: TranscriptMessage }
+  | { type: 'user'; message: TranscriptMessage; pending?: PendingPromptState; pendingError?: string }
   | { type: 'part'; part: TranscriptPart; streaming: boolean }
   | { type: 'thinking' }
   | { type: 'error'; error: string }
@@ -37,8 +38,10 @@ export function transcriptBlocks(
   turns: readonly TranscriptTurn[],
   agentWorking: boolean,
   expanded: ReadonlySet<string>,
+  pending: readonly PendingPrompt[] = [],
 ): ChatBlock[] {
-  return turns.flatMap((turn, turnIndex) => {
+  const delivering = pending.some(prompt => prompt.state === 'sending' || prompt.state === 'sent');
+  const blocks = turns.flatMap((turn, turnIndex) => {
     const rows: ChatBlock[] = [];
     const key = (...parts: string[]) => JSON.stringify([turn.id, ...parts]);
     const push = (id: string, content: BlockContent) => rows.push({
@@ -60,7 +63,8 @@ export function transcriptBlocks(
     for (const item of parts) {
       push(item.id, { type: 'part', part: item.part, streaming: item.id === streamingId });
     }
-    if (working && turn.status !== 'error' && !streamingId
+    // A prompt being delivered owns the trailing activity row, so it is not shown twice.
+    if (working && !delivering && turn.status !== 'error' && !streamingId
       && !parts.some(({ part }) => part.type === 'tool' && isRunningTool(part))) {
       push(key('thinking'), { type: 'thinking' });
     }
@@ -78,4 +82,66 @@ export function transcriptBlocks(
     push(key('meta'), { type: 'meta', turn });
     return rows;
   });
+  for (const prompt of pending) {
+    blocks.push({
+      type: 'user',
+      id: `pending:${prompt.id}`,
+      turnId: `pending:${prompt.id}`,
+      spacing: blocks.length ? 'turn' : 'none',
+      message: pendingPromptMessage(prompt),
+      pending: prompt.state,
+      pendingError: prompt.error,
+    });
+  }
+  if (delivering && (agentWorking || pending.some(prompt => prompt.state === 'sent'))) {
+    blocks.push({ type: 'thinking', id: 'pending:thinking', turnId: 'pending', spacing: 'part' });
+  }
+  return blocks;
+}
+
+const pendingMessages = new WeakMap<PendingPrompt, TranscriptMessage>();
+
+/** A stable synthetic user message, so a pending row re-renders only when its prompt changes. */
+function pendingPromptMessage(prompt: PendingPrompt): TranscriptMessage {
+  const cached = pendingMessages.get(prompt);
+  if (cached) return cached;
+  const message: TranscriptMessage = {
+    id: `pending:${prompt.id}`,
+    role: 'user',
+    parts: [
+      ...prompt.images.map((source, index) => ({ type: 'image' as const, id: `pending:${prompt.id}:image:${index}`, source })),
+      ...(prompt.text ? [{ type: 'text' as const, id: `pending:${prompt.id}:text`, text: prompt.text }] : []),
+    ],
+    diffs: [],
+  };
+  pendingMessages.set(prompt, message);
+  return message;
+}
+
+function sameBlock(previous: ChatBlock, next: ChatBlock): boolean {
+  const before = previous as unknown as Record<string, unknown>;
+  const after = next as unknown as Record<string, unknown>;
+  const keys = Object.keys(after);
+  if (keys.length !== Object.keys(before).length) return false;
+  return keys.every(key => before[key] === after[key]);
+}
+
+/**
+ * Reuse the previous row object whenever its content is unchanged. Rows are
+ * memoized by identity, so streaming one reply re-renders only that reply.
+ */
+export function stabilizeBlocks(
+  previous: readonly ChatBlock[],
+  next: ChatBlock[],
+): ChatBlock[] {
+  if (!previous.length) return next;
+  const byId = new Map(previous.map(block => [block.id, block]));
+  let unchanged = previous.length === next.length;
+  const stable = next.map((block, index) => {
+    const before = byId.get(block.id);
+    const value = before && sameBlock(before, block) ? before : block;
+    if (value !== previous[index]) unchanged = false;
+    return value;
+  });
+  return unchanged ? (previous as ChatBlock[]) : stable;
 }

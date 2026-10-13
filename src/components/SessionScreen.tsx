@@ -93,6 +93,12 @@ import {
 import { useAgentChatOpen } from '../hooks/useAgentChatOpen';
 import { useFocusedChatSpeech } from '../hooks/useFocusedChatSpeech';
 import type { AgentChatState } from '../agentChat';
+import {
+  nextPendingPromptExpiry,
+  settlePendingPrompts,
+  transcriptUserCount,
+  type PendingPrompt,
+} from '../lib/pendingPrompts';
 import type { HerdrClient } from '../services/HerdrClient';
 import {
   agentTranscriptReadiness,
@@ -132,8 +138,14 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Text } from './ui/text';
-import { TerminalBackground, TerminalScreen } from './TerminalScreen';
+import {
+  TerminalBackground,
+  TerminalScreen,
+  type TerminalComposerQueueItem,
+} from './TerminalScreen';
 import { AgentChatView } from './AgentChatView';
+import { ChatSkeleton } from './ChatSkeleton';
+import { BusySpinner } from './nightfall';
 import { AgentInteractionControls } from './AgentInteractionControls';
 import { ChatSessionActions } from './ChatSessionActions';
 import { shortHomePath } from '../lib/paths';
@@ -287,6 +299,82 @@ export function SessionScreen({
   const lastActivePaneId = useRef<string | null>(null);
   const pendingFocus = useRef<PendingFocus | null>(null);
   const chatViewsRef = useRef(chatViews);
+  // Composer submissions shown in chat until the agent's transcript echoes them.
+  const [composerPrompts, setComposerPrompts] = useState<
+    ReadonlyMap<string, readonly PendingPrompt[]>
+  >(() => new Map());
+  const composerQueuesRef = useRef(
+    new Map<string, readonly TerminalComposerQueueItem[]>(),
+  );
+  const updateComposerQueue = useCallback(
+    (terminalId: string, items: readonly TerminalComposerQueueItem[]) => {
+      const previousQueue = composerQueuesRef.current.get(terminalId) ?? [];
+      composerQueuesRef.current.set(terminalId, items);
+      let userCount = 0;
+      for (const view of chatViewsRef.current.values()) {
+        if (view.binding.terminalId === terminalId)
+          userCount = transcriptUserCount(view.state.transcript.turns);
+      }
+      const now = Date.now();
+      setComposerPrompts(current => {
+        const existing = current.get(terminalId) ?? [];
+        const byId = new Map(existing.map(prompt => [prompt.id, prompt]));
+        const promptId = (id: number) => `${terminalId}:${id}`;
+        // A prompt leaves the queue after its paste and Enter were delivered.
+        const delivered = previousQueue.flatMap(old => {
+          const prompt = byId.get(promptId(old.id));
+          return old.sending && prompt && !items.some(item => item.id === old.id)
+            ? [{ ...prompt, state: 'sent' as const, error: undefined, sentAt: now }]
+            : [];
+        });
+        const queued = items.map((item): PendingPrompt => {
+          const state = item.sending ? 'sending' : item.error ? 'failed' : 'queued';
+          const error = item.error ?? undefined;
+          const before = byId.get(promptId(item.id));
+          return before?.state === state && before.error === error
+            ? before
+            : {
+                id: promptId(item.id),
+                text: item.historyEntry,
+                images: [],
+                state,
+                error,
+                baseline: before?.baseline ?? userCount,
+              };
+        });
+        const next = [
+          ...existing.filter(prompt => prompt.state === 'sent'),
+          ...delivered,
+          ...queued,
+        ];
+        if (
+          next.length === existing.length &&
+          next.every((prompt, index) => prompt === existing[index])
+        )
+          return current;
+        const map = new Map(current);
+        if (next.length) map.set(terminalId, next);
+        else map.delete(terminalId);
+        return map;
+      });
+    },
+    [],
+  );
+  const settleComposerPrompts = useCallback(
+    (terminalId: string, userCount: number) => {
+      setComposerPrompts(current => {
+        const existing = current.get(terminalId);
+        if (!existing) return current;
+        const next = settlePendingPrompts(existing, userCount);
+        if (next === existing) return current;
+        const map = new Map(current);
+        if (next.length) map.set(terminalId, next);
+        else map.delete(terminalId);
+        return map;
+      });
+    },
+    [],
+  );
   // Eviction drops hydrated resources, but keeps Chat-mode intent during restore.
   // This holds only transcript identities, never a second residency/capacity policy.
   const [chatRestoreIntents, setChatRestoreIntents] = useState(new Map<string, string>());
@@ -449,6 +537,27 @@ export function SessionScreen({
   const activeChatView = activeTarget
     ? chatViews.get(activeTarget.key) || null
     : null;
+  const activeChatTerminalId = activeChatView?.binding.terminalId;
+  const activeChatUserCount = activeChatView
+    ? transcriptUserCount(activeChatView.state.transcript.turns)
+    : undefined;
+  const activeChatUserCountRef = useRef(activeChatUserCount);
+  activeChatUserCountRef.current = activeChatUserCount;
+  const activePendingPrompts = activeChatTerminalId
+    ? composerPrompts.get(activeChatTerminalId)
+    : undefined;
+  useEffect(() => {
+    if (activeChatTerminalId === undefined || activeChatUserCount === undefined) return;
+    settleComposerPrompts(activeChatTerminalId, activeChatUserCount);
+  }, [activeChatTerminalId, activeChatUserCount, settleComposerPrompts]);
+  useEffect(() => {
+    const expiry = activePendingPrompts && nextPendingPromptExpiry(activePendingPrompts);
+    if (expiry === undefined || activeChatTerminalId === undefined) return;
+    const timer = setTimeout(() => {
+      settleComposerPrompts(activeChatTerminalId, activeChatUserCountRef.current ?? 0);
+    }, Math.max(0, expiry - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [activeChatTerminalId, activePendingPrompts, settleComposerPrompts]);
   const chatOpen = useAgentChatOpen({
     hostSessionId,
     terminalId: terminalState.activeTerminalId,
@@ -506,6 +615,23 @@ export function SessionScreen({
     visible && preferChat && !chatVisible && preferredAgent === 'claude' &&
     activeTarget && startupTerminalKey !== activeTarget.key &&
     (!activeChatView || chatPresentationLoading(activeChatView.presentation)),
+  );
+  // Claude reports its session only after first-run questions. With a session,
+  // opening is just loading history, so it shows the conversation's shape
+  // rather than the startup panel.
+  const claudeStartupPanelVisible = claudeStartupVisible && !activePane?.agent_session;
+  const chatOpeningSkeletonVisible = claudeStartupVisible && !claudeStartupPanelVisible;
+  // A chat chosen in Chats briefly has no terminal binding yet. Show the
+  // conversation's frame instead of an empty canvas until it does.
+  // A delivered prompt means work has started, before the agent's hook reports it.
+  const paneStatus = activePane?.agent_status || 'unknown';
+  const chatHeaderStatus =
+    (paneStatus === 'idle' || paneStatus === 'done') &&
+    activePendingPrompts?.some(prompt => prompt.state === 'sent')
+      ? 'working'
+      : paneStatus;
+  const chatTargetPending = Boolean(
+    visible && preferChat && client && !activeTarget && !chatVisible && snapshot.server.running,
   );
   const activeSavedChat = savedChat?.paneId === activePane?.pane_id ? savedChat : null;
   const onChatSpeechError = useCallback((error: unknown) => {
@@ -694,6 +820,8 @@ export function SessionScreen({
     setAttachmentsOpen(false);
     setPasteRequest(null);
     reportedChatFailureGenerationsRef.current.clear();
+    composerQueuesRef.current.clear();
+    setComposerPrompts(new Map());
   }, [hostSessionId]);
 
   useEffect(() => {
@@ -832,6 +960,10 @@ export function SessionScreen({
         exitedTerminalKeys,
       );
       if (preloadTarget && preload?.type === 'bound') {
+        // An explicit open earlier in this commit (resuming a chat opened
+        // offline) already owns this binding; a preload must not demote it.
+        if (next.get(preloadTarget.key)?.binding.bindingToken === preload.binding.bindingToken)
+          return next;
         return new Map(next).set(preloadTarget.key, {
           binding: preload.binding,
           state: preload.state,
@@ -1636,7 +1768,7 @@ export function SessionScreen({
         )}
       </View>}
 
-      {preferChat && (chatVisible || claudeStartupVisible) ? (
+      {preferChat && (chatVisible || claudeStartupVisible || chatTargetPending) ? (
         <ChatSessionActions
           title={selectedTab?.label || 'Conversation'}
           subtitle={[preferredAgent || 'agent', hostName].filter(Boolean).join(' · ')}
@@ -1645,7 +1777,7 @@ export function SessionScreen({
           onOpenFiles={activeTerminalSession ? openFileManager : undefined}
           onOpenTerminal={closeActiveChat}
           key={activeTarget?.key || activePane?.pane_id}
-          status={activePane?.agent_status || 'unknown'}
+          status={chatHeaderStatus}
           online={Boolean(client && activeTarget?.hostConnected)}
           readAloud={ttsEnabled}
           onToggleReadAloud={onToggleReadAloud}
@@ -1681,6 +1813,7 @@ export function SessionScreen({
             composerDraftRequest={composerDraftRequest}
             onComposerDraftConsumed={onComposerDraftConsumed}
             onComposerDraftChange={onComposerDraftChange}
+            onComposerQueueChange={updateComposerQueue}
             linkScanRequest={linkScanRequest}
             pasteRequest={
               pasteRequest &&
@@ -1721,33 +1854,19 @@ export function SessionScreen({
             }
             chatViewEnabled={chatVisible || claudeStartupVisible}
             renderViewportOverlay={
-              savedChatOpen
-                ? (insets, latestButtonBottom, search) => (
-                    <View className="absolute inset-0 bg-background">
-                      {activeSavedChat ? (
-                        <AgentChatView
-                          simpleChat={preferChat}
-                          state={activeSavedChat.state}
-                          imageClient={client ?? undefined}
-                          agent={activeSavedChat.agent}
-                          agentStatus="idle"
-                          contentInsets={insets}
-                          latestButtonBottom={latestButtonBottom}
-                          searchOpen={search.open}
-                          onCloseSearch={search.onClose}
-                          onOpenFile={() => setSavedChatError(t('savedChats.filesUnavailable'))}
-                          onOpenWebLink={handleOpenWebLink}
-                        />
-                      ) : savedChatLoading ? (
-                        <ActivityIndicator className="mt-10" />
-                      ) : (
-                        <Text className="px-5 py-5 text-sm text-muted-foreground">{savedChatError || t('cachedHost.empty')}</Text>
-                      )}
-                    </View>
-                  )
-                : mountedChatViews.length
-                ? (insets, latestButtonBottom, search) =>
-                    mountedChatViews.map(
+              savedChatOpen || mountedChatViews.length || chatOpeningSkeletonVisible
+                ? (insets, latestButtonBottom, search) => (<>
+                    {chatOpeningSkeletonVisible ? (
+                      <View
+                        testID="chat-opening"
+                        pointerEvents="none"
+                        className="absolute inset-0 bg-background"
+                        style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+                      >
+                        <ChatSkeleton label={`Loading ${chatAgentDisplayName(preferredAgent ?? 'claude')} conversation`} active={visible} />
+                      </View>
+                    ) : null}
+                    {mountedChatViews.map(
                       ({ key, view: chatView, identity }) => {
                         const selected = key === activeTarget?.key;
                         const active = key === activeChatKey;
@@ -1787,6 +1906,7 @@ export function SessionScreen({
                                   ].join(':')}
                                   state={chatView.state}
                                   imageClient={chatClient}
+                                  pendingPrompts={selected ? composerPrompts.get(terminalId) : undefined}
                                   active={active}
                                   savedViewport={viewportRetention.snapshots.get(
                                     identity,
@@ -1805,7 +1925,7 @@ export function SessionScreen({
                                   }
                                   contentInsets={insets}
                                   latestButtonBottom={latestButtonBottom}
-                                  searchOpen={search.open}
+                                  searchOpen={search.open && !savedChatOpen}
                                   onCloseSearch={search.onClose}
                                   onOpenFile={openChatFile}
                                   onOpenWebLink={handleOpenWebLink}
@@ -1870,7 +1990,43 @@ export function SessionScreen({
                           </ScreenUpdates>
                         );
                       },
-                    )
+                    )}
+                    {/* A live chat prepares underneath the saved transcript and
+                        replaces it once revealed; the overlay alone could never
+                        hand over, even after the host reconnected. */}
+                    {savedChatOpen ? (
+                      <View className="absolute inset-0 bg-background">
+                        {activeSavedChat ? (
+                          <AgentChatView
+                            simpleChat={preferChat}
+                            state={activeSavedChat.state}
+                            imageClient={client ?? undefined}
+                            agent={activeSavedChat.agent}
+                            agentStatus="idle"
+                            contentInsets={insets}
+                            latestButtonBottom={latestButtonBottom}
+                            searchOpen={search.open}
+                            onCloseSearch={search.onClose}
+                            onOpenFile={() => setSavedChatError(t('savedChats.filesUnavailable'))}
+                            onOpenWebLink={handleOpenWebLink}
+                          />
+                        ) : savedChatLoading || client ? (
+                          // Reading the cache, or the live chat is already on its way.
+                          <View
+                            className="flex-1"
+                            style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+                          >
+                            <ChatSkeleton
+                              label={`Loading ${chatAgentDisplayName(preferredAgent ?? 'claude')} conversation`}
+                              active={visible}
+                            />
+                          </View>
+                        ) : (
+                          <Text className="px-5 py-5 text-sm text-muted-foreground">{savedChatError || t('cachedHost.empty')}</Text>
+                        )}
+                      </View>
+                    ) : null}
+                  </>)
                 : undefined
             }
             viewportOverlayBackground={
@@ -1911,7 +2067,12 @@ export function SessionScreen({
             }}
           />
         </View>
-        {claudeStartupVisible && activeTarget ? (
+        {chatTargetPending ? (
+          <View testID="chat-opening" pointerEvents="none" className="absolute inset-0 bg-background">
+            <ChatSkeleton label="Opening conversation" active={visible} />
+          </View>
+        ) : null}
+        {claudeStartupPanelVisible && activeTarget ? (
           <ScrollView testID="claude-chat-startup" className="absolute inset-0 bg-background" contentContainerClassName="gap-4 px-5 py-8">
             <Text className="text-lg font-semibold">Preparing Claude</Text>
             <Text className="text-sm text-muted-foreground">
@@ -1921,6 +2082,12 @@ export function SessionScreen({
               target={{ native: activeTarget.client.native, terminalId: activeTarget.session.terminalId, bindingToken: activeChatView?.binding.bindingToken ?? '' }}
               enabled={visible && activeTarget.hostConnected}
               onOpenTerminal={closeActiveChat}
+              idleFallback={(
+                <View accessibilityLiveRegion="polite" className="flex-row items-center gap-2.5 rounded-2xl bg-card px-4 py-3.5">
+                  <BusySpinner color={colors.working} size={15} />
+                  <Text className="text-[14px] text-text2">Waiting for Claude to start…</Text>
+                </View>
+              )}
             />
             <Button variant="outline" onPress={closeActiveChat} accessibilityLabel="Open terminal during Claude startup">
               <Text>Open terminal</Text>

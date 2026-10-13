@@ -42,6 +42,7 @@ jest.mock('../src/components/ui/button', () => ({ Button: 'Button' }));
 jest.mock('../src/components/ui/input', () => ({ Input: 'Input' }));
 jest.mock('../src/components/ui/text', () => ({ Text: 'Text' }));
 jest.mock('../src/components/app-ui', () => ({ AgentStatusMedallion: 'AgentStatusMedallion' }));
+jest.mock('../src/components/ChatSkeleton', () => ({ ChatRowSkeleton: 'ChatRowSkeleton', ChatSkeleton: 'ChatSkeleton' }));
 jest.mock('../src/components/nightfall', () => {
   const { createElement } = jest.requireActual('react');
   return {
@@ -418,4 +419,31 @@ test.each([false, true])('new Codex chat gets a Herdr tab and preserves the crea
   expect(open).toHaveBeenCalledWith('host-0', 'created-id');
   expect(Alert.alert).toHaveBeenCalledTimes(failure ? 1 : 0);
   expect(onShowChats).not.toHaveBeenCalled();
+});
+
+test('a chat that is still opening shows progress on its own row', async () => {
+  const { sessions, onShowChats } = setup();
+  Object.assign(sessions.presentationSessions[0].snapshot, {
+    agents: [{ agent: 'claude', agent_status: 'idle', pane_id: 'claude-pane', tab_id: 'claude-tab', workspace_id: 'workspace-host-0' }],
+    tabs: [{ tab_id: 'claude-tab', label: 'Claude existing' }],
+  });
+  let finish!: () => void;
+  const openClaude = jest.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+  await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} onOpenChat={openClaude} />); });
+  const row = () => button('Open chat claude on First');
+  act(() => { row().props.onPress(); });
+  expect(row().props.accessibilityState).toEqual({ busy: true });
+  expect(row().props.accessibilityHint).toBe('Opening…');
+  expect(row().findAll(node => String(node.type) === 'BusySpinner')).toHaveLength(1);
+  await act(async () => { finish(); });
+  expect(row().props.accessibilityState).toEqual({ busy: false });
+  expect(row().findAll(node => String(node.type) === 'BusySpinner')).toHaveLength(0);
+});
+
+test('while servers reconnect with no chats yet, the queue shows placeholder rows', async () => {
+  const { sessions, onShowChats } = setup();
+  Object.assign(sessions, { restoreComplete: false });
+  sessions.presentationSessions.forEach(session => { session.connectionStatus = 'reconnecting'; });
+  await act(async () => { renderer = create(<ChatsScreen hosts={hosts} sessions={sessions as unknown as SessionRuntimeController} onManageHosts={jest.fn()} onShowChats={onShowChats} />); });
+  expect(renderer.root.findAll(node => String(node.type) === 'ChatRowSkeleton')).toHaveLength(1);
 });

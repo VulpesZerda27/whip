@@ -102,9 +102,18 @@ export function useCodexHosts(
       const client = codexClient(native!);
       let previous = client.snapshot;
       const stop = client.subscribe(() => {
-        notify(session.hostId, client, previous);
-        previous = client.snapshot;
-        update(v => v + 1);
+        const next = client.snapshot;
+        // Open chats subscribe to their own transcript. Streamed replies must not
+        // re-render the whole shell; only list, status and connection state do.
+        const listChanged =
+          next.threads !== previous.threads ||
+          next.requests !== previous.requests ||
+          next.connected !== previous.connected ||
+          next.connectionId !== previous.connectionId ||
+          next.error !== previous.error;
+        if (listChanged) notify(session.hostId, client, previous);
+        previous = next;
+        if (listChanged) update(v => v + 1);
       });
       if (monitor && session.connectionStatus === 'ready') client.start();
       else {

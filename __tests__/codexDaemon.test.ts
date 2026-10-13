@@ -615,3 +615,60 @@ test('background suspension keeps already-drained events from the same healthy c
   for (let i = 0; i < 20; i++) await Promise.resolve();
   expect(f.client.snapshot.threads.find(t => t.id === 'thread-b')?.status).toBe('working');
 });
+
+test('a burst of streamed deltas is projected and published once per poll', async () => {
+  const f = fixture();
+  await f.client.refresh();
+  await f.client.open('thread-a');
+  const before = f.client.snapshot.chats['thread-a'];
+  const changed = jest.fn();
+  f.client.subscribe(changed);
+  for (const delta of [' One.', ' Two.', ' Three.'])
+    f.queue({
+      method: 'item/agentMessage/delta',
+      params: { threadId: 'thread-a', turnId: 'turn-a', itemId: 'answer-a', delta },
+    });
+  f.client.start();
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  f.client.stop();
+  expect(changed).toHaveBeenCalledTimes(1);
+  const after = f.client.snapshot.chats['thread-a'];
+  expect(after.transcript.messages.at(-1)?.parts).toContainEqual({
+    type: 'text',
+    id: 'answer-a',
+    text: 'The entire final answer. One. Two. Three.',
+  });
+  // The untouched user prompt keeps its identity, so its row is not re-rendered.
+  expect(after.transcript.messages[0]).toBe(before.transcript.messages[0]);
+  expect(after.transcript.turns[0].user).toBe(before.transcript.turns[0].user);
+  expect(after.transcript.messages.at(-1)).not.toBe(before.transcript.messages.at(-1));
+});
+
+test('events that change nothing visible and quiet refreshes do not publish', async () => {
+  const f = fixture();
+  await f.client.refresh();
+  await f.client.open('thread-a');
+  const changed = jest.fn();
+  f.client.subscribe(changed);
+  f.client.event({
+    method: 'thread/name/updated',
+    params: { threadId: 'thread-a', threadName: 'A' },
+  });
+  await f.client.refresh();
+  expect(changed).not.toHaveBeenCalled();
+  f.client.event({
+    method: 'thread/name/updated',
+    params: { threadId: 'thread-a', threadName: 'Renamed' },
+  });
+  expect(changed).toHaveBeenCalledTimes(1);
+  expect(f.client.snapshot.threads.find(t => t.id === 'thread-a')?.name).toBe('Renamed');
+  expect(f.client.snapshot.chats['thread-a'].transcript.info?.title).toBe('Renamed');
+});
+
+test('a re-projection with identical content keeps the previous transcript arrays', () => {
+  const first = projectCodex(thread, [structuredClone(turn)]);
+  const second = projectCodex(thread, [structuredClone(turn)], 'live', first);
+  expect(second.transcript.turns).toBe(first.transcript.turns);
+  expect(second.transcript.messages).toBe(first.transcript.messages);
+  expect(second.transcript.info).toBe(first.transcript.info);
+});

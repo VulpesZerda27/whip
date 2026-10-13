@@ -1581,7 +1581,7 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
     expect(scrollToEnd).not.toHaveBeenCalled();
   });
 
-  test('an empty loaded transcript can complete initial readiness', () => {
+  test('an empty loaded transcript completes readiness without waiting for list items', () => {
     const onReady = jest.fn();
     renderChat(chatState([]), onReady);
 
@@ -1589,9 +1589,9 @@ describe.each(['codex', 'opencode', 'claude'] as const)('AgentChatView initial v
       chatViewport(renderer).props.onLayout({
         nativeEvent: { layout: { height: 400 } },
       });
-      flatList(renderer).props.onContentSizeChange(0, 0);
       expect(onReady).not.toHaveBeenCalled();
-      flatList(renderer).props.onLoad();
+      // FlashList never reports onLoad for an empty list, so content size is enough.
+      flatList(renderer).props.onContentSizeChange(0, 0);
     });
 
     expect(onReady).toHaveBeenCalledTimes(1);
@@ -1807,5 +1807,65 @@ describe.each(['opencode', 'codex', 'claude'] as const)('chat search navigation 
     expect(mockSearchDispose).toHaveBeenCalledTimes(1);
     expect(renderer.root.findAll(node => String(node.type) === 'Input')).toHaveLength(0);
     expect(scrollToIndex).not.toHaveBeenCalled();
+  });
+});
+
+describe('loading and pending prompts', () => {
+  const skeletons = (renderer: ReactTestRenderer) =>
+    renderer.root.findAll(node => node.props.testID === 'chat-skeleton' && typeof node.type === 'string');
+
+  test('an empty loading transcript shows the conversation skeleton until history is aligned and revealed', () => {
+    jest.useFakeTimers();
+    try {
+      let renderer!: ReactTestRenderer;
+      const loading: AgentChatState = { ...chatState([]), status: 'loading' };
+      act(() => { renderer = create(chatView(loading)); });
+      expect(skeletons(renderer)).toHaveLength(1);
+      act(() => { jest.advanceTimersByTime(CHAT_VIEWPORT_REVEAL_FALLBACK_MS); });
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+      expect(skeletons(renderer)).toHaveLength(1);
+      act(() => { renderer.update(chatView(chatState([TURN]))); });
+      // History is aligned to its end while hidden; the skeleton stays in place.
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(0);
+      expect(skeletons(renderer)).toHaveLength(1);
+      act(() => { jest.advanceTimersByTime(CHAT_VIEWPORT_REVEAL_FALLBACK_MS); });
+      expect(chatViewport(renderer).parent?.props.style.opacity).toBe(1);
+      expect(skeletons(renderer)).toHaveLength(0);
+      act(() => renderer.unmount());
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('a live empty conversation never shows the skeleton', () => {
+    let renderer!: ReactTestRenderer;
+    act(() => { renderer = create(chatView(chatState([]))); });
+    expect(skeletons(renderer)).toHaveLength(0);
+    act(() => renderer.unmount());
+  });
+
+  test('a pending prompt is shown faded with its delivery state, then as a final bubble once delivered', () => {
+    let renderer!: ReactTestRenderer;
+    const view = (state: 'sending' | 'sent') => (
+      <AgentChatView
+        agent="claude"
+        agentStatus="idle"
+        contentInsets={CONTENT_INSETS}
+        latestButtonBottom={297}
+        onOpenFile={jest.fn()}
+        state={chatState([{ ...TURN, status: 'idle' }])}
+        pendingPrompts={[{ id: 'p', text: 'Next step', images: [], state, baseline: 0 }]}
+      />
+    );
+    act(() => { renderer = create(view('sending')); });
+    let rows!: ReactTestRenderer;
+    act(() => { rows = create(renderedBlocks(renderer)); });
+    const prompt = rows.root.findByProps({ testID: 'pending-prompt' });
+    expect(prompt.findAllByProps({ children: 'Sending…' })).not.toHaveLength(0);
+    act(() => { renderer.update(view('sent')); });
+    act(() => { rows.update(renderedBlocks(renderer)); });
+    expect(rows.root.findAllByProps({ children: 'Sending…' })).toHaveLength(0);
+    expect(flatList(renderer).props.data.at(-1).type).toBe('thinking');
+    act(() => { rows.unmount(); renderer.unmount(); });
   });
 });

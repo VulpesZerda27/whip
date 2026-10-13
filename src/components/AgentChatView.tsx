@@ -50,7 +50,8 @@ import type {
   TranscriptToolPart,
   TranscriptTurn,
 } from '../agentChat';
-import { isQuestionTool, isRunningTool as isRunning, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import { isQuestionTool, isRunningTool as isRunning, stabilizeBlocks, transcriptBlocks, type ChatBlock } from '../lib/agentChatBlocks';
+import type { PendingPrompt, PendingPromptState } from '../lib/pendingPrompts';
 import type { ChatViewportState } from '../lib/chatViewportState';
 import { chatAgentDisplayName, type ChatAgent } from '../lib/agentChatSession';
 import {
@@ -77,6 +78,7 @@ import { OverlayScrollbar, type OverlayScrollbarDragEvent } from './OverlayScrol
 import { Button } from './ui/button';
 import { Text } from './ui/text';
 import { ChatPromptImage } from './ChatPromptImage';
+import { ChatSkeleton } from './ChatSkeleton';
 import type { RemoteFileClient } from '../services/remoteFileTransfer';
 
 interface Props {
@@ -98,7 +100,11 @@ interface Props {
   onInitialViewportReady?: () => void;
   savedViewport?: ChatViewportState;
   onSaveViewport?: (state: ChatViewportState) => void;
+  /** Submitted prompts the transcript does not show yet, oldest first. */
+  pendingPrompts?: readonly PendingPrompt[];
 }
+
+const NO_PENDING_PROMPTS: readonly PendingPrompt[] = [];
 
 const CHAT_CONTENT_TOP_GAP = 16;
 const CHAT_CONTENT_BOTTOM_GAP = 24;
@@ -698,12 +704,20 @@ function formatDuration(start: number | undefined, end: number | undefined): str
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function UserPrompt({ message, imageClient, directory, active, simpleChat }: {
+const PENDING_PROMPT_CAPTIONS: Record<Exclude<PendingPromptState, 'sent'>, string> = {
+  queued: 'Waiting to send…',
+  sending: 'Sending…',
+  failed: 'Not sent yet · retrying',
+};
+
+function UserPrompt({ message, imageClient, directory, active, simpleChat, pending, pendingError }: {
   message: TranscriptMessage;
   imageClient?: RemoteFileClient;
   directory?: string;
   active: boolean;
   simpleChat: boolean;
+  pending?: PendingPromptState;
+  pendingError?: string;
 }) {
   const { colors } = useTheme();
   const { copied, copyText } = useCopyFeedback();
@@ -712,12 +726,15 @@ function UserPrompt({ message, imageClient, directory, active, simpleChat }: {
   const copyPrompt = () => copyText(text);
   if (!text) return null;
   const meta = formatTime(message.createdAt);
+  // Delivered prompts look final; the real transcript row replaces them in place.
+  const caption = pending && pending !== 'sent' ? PENDING_PROMPT_CAPTIONS[pending] : undefined;
   return (
-    <View className="ml-9 items-end">
+    <View className="ml-9 items-end" testID={pending ? 'pending-prompt' : undefined}>
       <Pressable
         accessibilityLabel="Copy prompt"
+        accessibilityHint={caption}
         className="min-h-11 max-w-[86%] gap-2 bg-selection px-3.5 py-2.5"
-        style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomRightRadius: 6, borderBottomLeftRadius: 20 }}
+        style={{ borderTopLeftRadius: 20, borderTopRightRadius: 20, borderBottomRightRadius: 6, borderBottomLeftRadius: 20, opacity: caption ? 0.62 : 1 }}
         onLongPress={copyPrompt}>
         {parts.map(part => part.type === 'image'
           ? <ChatPromptImage key={part.id} source={part.source} client={imageClient} directory={directory} active={active} />
@@ -725,7 +742,17 @@ function UserPrompt({ message, imageClient, directory, active, simpleChat }: {
             ? <Text key={part.id} selectable className="text-[15px] leading-[22px] text-foreground"><SearchText text={part.text} /></Text>
             : null)}
       </Pressable>
-      {!simpleChat && <View className="mt-1 flex-row items-center gap-1 px-1">
+      {caption ? (
+        <Text
+          accessibilityLiveRegion="polite"
+          numberOfLines={2}
+          className="mt-1 px-1 text-[12px] leading-4"
+          style={{ color: pending === 'failed' ? colors.blocked : colors.textTertiary }}
+        >
+          {pending === 'failed' && pendingError ? `${caption}: ${pendingError}` : caption}
+        </Text>
+      ) : null}
+      {!simpleChat && !pending && <View className="mt-1 flex-row items-center gap-1 px-1">
         {meta && <Text className="text-[9px] text-muted-foreground">{meta}</Text>}
         <Button accessibilityLabel="Copy prompt" className="size-6 rounded-full px-0" variant="ghost" onPress={copyPrompt}>{copied ? <Check size={11} color={colors.done} /> : <Copy size={11} color={colors.textTertiary} />}</Button>
       </View>}
@@ -805,7 +832,7 @@ const TranscriptBlockView = memo(function TranscriptBlockRow({
   const toggle = () => onToggle(block.id);
   const content = () => {
     switch (block.type) {
-      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} simpleChat={simpleChat} />;
+      case 'user': return <UserPrompt message={block.message} imageClient={imageClient} directory={directory} active={active} simpleChat={simpleChat} pending={block.pending} pendingError={block.pendingError} />;
       case 'part': return <AssistantPart part={block.part} streaming={active && block.streaming} expanded={expanded} onToggle={toggle} active={active} onLinkPress={onLinkPress} />;
       case 'thinking': return <ThinkingIndicator active={active} />;
       case 'error': return <TranscriptNoticeCard error className="flex-row"><CircleAlert size={15} color={colors.error} /><Text selectable className="min-w-0 flex-1 text-[12px] leading-[18px] text-muted-foreground"><SearchText text={block.error} /></Text></TranscriptNoticeCard>;
@@ -847,6 +874,7 @@ export function AgentChatView({
   onInitialViewportReady,
   savedViewport,
   onSaveViewport,
+  pendingPrompts = NO_PENDING_PROMPTS,
 }: Props) {
   const { colors } = useTheme();
   const searchSession = useRef(state.sessionId);
@@ -889,8 +917,11 @@ export function AgentChatView({
       return next;
     });
   }, []);
-  const blocks = useMemo(() => transcriptBlocks(turns, agentWorking, expandedBlocks), [turns, agentWorking, expandedBlocks]);
-  const blocksRef = useRef(blocks);
+  const blocksRef = useRef<ChatBlock[]>([]);
+  const blocks = useMemo(
+    () => stabilizeBlocks(blocksRef.current, transcriptBlocks(turns, agentWorking, expandedBlocks, pendingPrompts)),
+    [turns, agentWorking, expandedBlocks, pendingPrompts],
+  );
   blocksRef.current = blocks;
   const latestBlockId = blocks.at(-1)?.id ?? null;
   const list = useRef<FlashListRef<ChatBlock>>(null);
@@ -1067,6 +1098,10 @@ export function AgentChatView({
     return Math.max(0, Math.min(offset, maximumOffset));
   };
 
+  // FlashList never reports an empty list as loaded; it has nothing to draw.
+  const initialItemsLoaded = () =>
+    initialViewportRef.current.itemsLoaded || latestBlockIdRef.current === null;
+
   const initialViewportConditionsSatisfied = () => {
     const readiness = initialViewportRef.current;
     const currentLatestBlockId = latestBlockIdRef.current;
@@ -1078,7 +1113,7 @@ export function AgentChatView({
       Math.max(0, geometry.contentHeight - geometry.viewportHeight),
     );
     return readiness.viewportLaidOut
-      && readiness.itemsLoaded
+      && initialItemsLoaded()
       && readiness.contentSizeKnown
       && readiness.positionConfirmed
       && (restoringOffset
@@ -1189,11 +1224,17 @@ export function AgentChatView({
     );
     if (
       !active || readiness.ready ||
-      !readiness.itemsLoaded ||
+      !initialItemsLoaded() ||
       !readiness.contentSizeKnown ||
       geometry.viewportHeight <= 0
     )
       return;
+    if (latestBlockIdRef.current === null && maximumOffset === 0) {
+      // An empty conversation has exactly one position; there is nothing to align.
+      readiness.positionConfirmed = true;
+      updateInitialEndPosition(0, geometry.contentHeight, geometry.viewportHeight);
+      return;
+    }
     const saved = savedViewportRef.current;
     const targetOffset =
       saved && !saved.followEnd
@@ -1266,6 +1307,45 @@ export function AgentChatView({
     const timer = setTimeout(revealStalledViewport, CHAT_VIEWPORT_REVEAL_FALLBACK_MS);
     return () => clearTimeout(timer);
   }, [active, viewportReady]);
+
+  // History that arrives after an empty loading viewport is aligned to the
+  // latest message while hidden behind the skeleton, then revealed, instead of
+  // appearing at the top and visibly jumping to the end.
+  const loadingEmpty = state.status === 'loading' && turns.length === 0 && pendingPrompts.length === 0;
+  const loadingEmptyRef = useRef(loadingEmpty);
+  const [revealingHistory, setRevealingHistory] = useState(false);
+  useLayoutEffect(() => {
+    const wasLoadingEmpty = loadingEmptyRef.current;
+    loadingEmptyRef.current = loadingEmpty;
+    if (!wasLoadingEmpty || loadingEmpty || turns.length === 0) return;
+    const readiness = initialViewportRef.current;
+    if (!active || !readiness.ready) return;
+    readiness.ready = false;
+    readiness.atEnd = false;
+    readiness.viewableLatestBlockId = null;
+    setViewportReady(false);
+    setRevealingHistory(true);
+  }, [active, loadingEmpty, turns.length]);
+  useEffect(() => {
+    if (viewportReady || !active) setRevealingHistory(false);
+  }, [active, viewportReady]);
+  const showSkeleton = active && (loadingEmpty || (revealingHistory && !viewportReady));
+
+  // Sending is an explicit request to see the conversation's end. When already
+  // following it, the measured content change keeps the end in view; an early
+  // animated scroll to the unmeasured end would briefly show an empty list.
+  const pendingCount = pendingPrompts.length;
+  const pendingCountRef = useRef(pendingCount);
+  const followSubmittedPrompt = useEffectEvent(() => {
+    if (!initialViewportRef.current.ready || followEndRef.current) return;
+    setFollowEnd(true);
+    scrollToLatest(false);
+  });
+  useEffect(() => {
+    const previous = pendingCountRef.current;
+    pendingCountRef.current = pendingCount;
+    if (active && pendingCount > previous) followSubmittedPrompt();
+  }, [active, pendingCount]);
 
   useEffect(() => {
     recordAgentChatDiagnostic('viewport-props-changed', {
@@ -1468,6 +1548,7 @@ export function AgentChatView({
   const viewportVisible = active && activeRef.current === active && viewportReady;
 
   return (
+    <>
     <View
       // Readiness/activity opacity changes must not flatten and reparent this layer.
       collapsable={false}
@@ -1530,7 +1611,8 @@ export function AgentChatView({
           ListHeaderComponent={
             <>
               <ChatBoundarySpacer height={contentPadding.top} />
-              {state.status !== 'live' && (
+              {/* An empty loading transcript shows the skeleton instead. */}
+              {state.status !== 'live' && !loadingEmpty && (
                 <View
                   className={cn(
                     'flex-row items-center gap-2 py-3',
@@ -1548,8 +1630,10 @@ export function AgentChatView({
                   >
                     {state.error ||
                       (state.status === 'loading'
-                        ? `Reading the local ${agentName} history…`
-                        : 'The transcript is temporarily unavailable.')}
+                        ? `Updating ${agentName} history…`
+                        : turns.length > 0
+                          ? 'Showing the last synced messages.'
+                          : 'The transcript is temporarily unavailable.')}
                   </Text>
                 </View>
               )}
@@ -1663,6 +1747,12 @@ export function AgentChatView({
         )}
       </View>
     </View>
+    {showSkeleton && (
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        <ChatSkeleton label={`Loading ${agentName} conversation`} active={active} />
+      </View>
+    )}
+    </>
   );
 }
 

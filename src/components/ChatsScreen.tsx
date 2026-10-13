@@ -34,6 +34,7 @@ import { Input } from './ui/input';
 import { Text } from './ui/text';
 import { AgentStatusMedallion } from './app-ui';
 import { ActionButton, BusySpinner, ListGroup, SectionLabel, SegmentedControl } from './nightfall';
+import { ChatRowSkeleton } from './ChatSkeleton';
 import type { ChatLibraryController } from '../hooks/useChatLibrary';
 import {
   chatKey,
@@ -128,6 +129,8 @@ export function ChatsScreen({
   const [folderFilter, setFolderFilter] = useState('');
   const [favoriteSaved, setFavoriteSaved] = useState(false);
   const [selectedFavorite, setSelectedFavorite] = useState<string | null>(null);
+  // A chat that may need to reconnect its server shows progress on its own row.
+  const [openingRow, setOpeningRow] = useState<string | null>(null);
   const saved = library?.value ?? emptyChatLibrary;
   const appliedScope = useRef(0);
   useEffect(() => {
@@ -461,7 +464,8 @@ export function ChatsScreen({
     ? `${hostDisplayName(scopedHost)} · ${scopedSession?.connectionStatus === 'ready'
       ? scopedSession.snapshot.server.protocol != null ? `Herdr P${scopedSession.snapshot.server.protocol}` : 'Connected'
       : scopedSession?.connectionStatus === 'error' ? 'Connection lost'
-        : scopedSession && scopedSession.connectionStatus !== 'disconnected' ? 'Connecting…' : 'Offline'}`
+        // Saved servers stay 'disconnected' until startup restore reaches them.
+        : !sessions.restoreComplete || (scopedSession && scopedSession.connectionStatus !== 'disconnected') ? 'Connecting…' : 'Offline'}`
     : `All servers · ${connectedCount} connected`;
   const mergedQueue = !filter && new Set(scopedRows.map(row => row.session.hostId)).size > 1;
   const startNewAgent = () => {
@@ -685,6 +689,7 @@ export function ChatsScreen({
               {agents.map(row => (
                 <ChatQueueRow
                   key={`${row.session.id}:${row.agent.pane_id}`}
+                  opening={openingRow === `${row.session.id}:${row.agent.pane_id}`}
                   row={row}
                   title={rowTitle(row)}
                   status={chatRowStatus(row, saved.activity)}
@@ -696,16 +701,20 @@ export function ChatsScreen({
                     const { session: agentSession, agent, thread, terminalOnly } = row;
                     if (terminalOnly) sessions.openAgentTerminal(agentSession.id, agent);
                     else if (thread && onOpenCodex) onOpenCodex(agentSession.hostId, thread.id);
-                    else if (onOpenChat)
-                      void onOpenChat({
+                    else if (onOpenChat) {
+                      const rowKey = `${agentSession.id}:${agent.pane_id}`;
+                      setOpeningRow(rowKey);
+                      void Promise.resolve(onOpenChat({
                         hostId: agentSession.hostId,
                         paneId: agent.pane_id,
-                      });
-                    else sessions.openAgentTerminal(agentSession.id, agent);
+                      })).finally(() => setOpeningRow(current => (current === rowKey ? null : current)));
+                    } else sessions.openAgentTerminal(agentSession.id, agent);
                   }}
                 />
               ))}
             </ListGroup>
+          ) : syncing && !searching && !statusFilter ? (
+            <ChatRowSkeleton />
           ) : (
             <View className="items-center rounded-3xl bg-card px-5 pb-[22px] pt-7">
               <Text className="text-center text-[17px] font-semibold">
@@ -1235,6 +1244,7 @@ function ChatQueueRow({
   updatedAt,
   showHost,
   syncing,
+  opening = false,
   onPress,
 }: {
   row: ChatRow;
@@ -1244,6 +1254,7 @@ function ChatQueueRow({
   updatedAt?: number;
   showHost: boolean;
   syncing: boolean;
+  opening?: boolean;
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -1255,12 +1266,13 @@ function ChatQueueRow({
   const color = statusColor(status, colors);
   const provider = agent.agent === 'codex' ? 'codex' : 'claude';
   const path = shortHomePath(thread?.cwd || agent.cwd) || workspace?.label;
-  const statusText = offline ? 'Offline' : syncing ? 'Syncing…' : STATUS_LABELS[status] ?? status;
+  const statusText = opening ? (offline ? 'Connecting…' : 'Opening…') : offline ? 'Offline' : syncing ? 'Syncing…' : STATUS_LABELS[status] ?? status;
   const time = formatRelativeShort(updatedAt);
   return (
     <Button
       accessibilityLabel={`${terminalOnly ? 'Open terminal' : 'Open chat'} ${accessibleName} on ${hostDisplayName(agentSession.host)}`}
       accessibilityHint={`${statusText}${unseen && status === 'done' ? ', new' : ''}`}
+      accessibilityState={{ busy: opening }}
       variant="ghost"
       size="content"
       className="h-auto min-h-[72px] w-full flex-row items-center justify-start gap-3.5 rounded-none py-3 pl-3.5 pr-2 active:bg-raised"
@@ -1287,14 +1299,16 @@ function ChatQueueRow({
       <View className="items-end">
         <Text
           className="text-[12.5px] font-semibold"
-          style={{ color: offline || syncing || status === 'idle' || status === 'unknown' ? colors.textTertiary : color }}
+          style={{ color: opening ? colors.working : offline || syncing || status === 'idle' || status === 'unknown' ? colors.textTertiary : color }}
           numberOfLines={1}
         >
           {statusText}
         </Text>
         {time ? <Text className="mt-0.5 text-xs text-text3">{time}</Text> : null}
       </View>
-      <ChevronRight color={colors.decor} size={18} strokeWidth={2} />
+      {opening
+        ? <View className="size-[18px] items-center justify-center"><BusySpinner color={colors.working} size={16} /></View>
+        : <ChevronRight color={colors.decor} size={18} strokeWidth={2} />}
     </Button>
   );
 }

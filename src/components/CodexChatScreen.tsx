@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Alert,
   Linking,
@@ -33,11 +33,18 @@ import {
 } from '../lib/codexElicitation';
 import { listenToChat } from '../services/chatSpeech';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
-import { emptyTranscript } from '../agentChat';
+import { emptyTranscript, type AgentChatState } from '../agentChat';
+import {
+  nextPendingPromptExpiry,
+  settlePendingPrompts,
+  transcriptUserCount,
+  type PendingPrompt,
+} from '../lib/pendingPrompts';
 import {
   codexChatKey,
   type CodexDaemonClient,
   type CodexRequest,
+  type CodexSnapshot,
   type CodexWire,
   type CodexModel,
   type CodexQuestion,
@@ -401,6 +408,11 @@ function Radio({ selected }: { selected: boolean }) {
   );
 }
 
+/** Subscribes to one slice of the daemon snapshot; other threads' updates do not re-render. */
+function useDaemonValue<T>(daemon: CodexDaemonClient, select: (snapshot: CodexSnapshot) => T): T {
+  return useSyncExternalStore(daemon.subscribe, () => select(daemon.getSnapshot()));
+}
+
 interface Props {
   hostId: string;
   threadId: string;
@@ -429,31 +441,56 @@ export function CodexChatScreen({
   const insets = useSafeAreaInsets();
   const viewport = useRef<View | null>(null);
   const { inset: keyboardInset } = useKeyboardInset(viewport);
-  const snapshot = useSyncExternalStore(daemon.subscribe, daemon.getSnapshot);
-  const thread = snapshot.threads.find(t => t.id === threadId);
-  const chat = snapshot.chats[threadId] ?? {
+  const threads = useDaemonValue(daemon, s => s.threads);
+  const requests = useDaemonValue(daemon, s => s.requests);
+  const loadedChat = useDaemonValue(daemon, s => s.chats[threadId]);
+  const connected = useDaemonValue(daemon, s => s.connected);
+  const connectionId = useDaemonValue(daemon, s => s.connectionId);
+  const daemonError = useDaemonValue(daemon, s => s.error);
+  const thread = threads.find(t => t.id === threadId);
+  const placeholderChat = useMemo<AgentChatState>(() => ({
     sessionId: threadId,
-    status: 'loading' as const,
+    status: daemonError ? 'unavailable' : 'loading',
     transcript: emptyTranscript(threadId),
-  };
+  }), [threadId, daemonError]);
+  const chat = loadedChat ?? placeholderChat;
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [loadedDraft, setLoadedDraft] = useState(false);
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const busy = useRef(false);
   const [attachments, setAttachments] = useState<
     { path: string; image: boolean }[]
   >([]);
+  const [pending, setPending] = useState<readonly PendingPrompt[]>([]);
+  const promptSequence = useRef(0);
   const [settings, setSettings] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [models, setModels] = useState<CodexModel[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
   const [model, setModel] = useState('');
   const [effort, setEffort] = useState('default');
   const input = useRef<TextInput | null>(null);
   const active = useRef(true);
   const currentText = useRef('');
   const key = codexChatKey(threadId);
+  const userCount = transcriptUserCount(chat.transcript.turns);
+  const userCountRef = useRef(userCount);
+  userCountRef.current = userCount;
+  // The transcript echoing a prompt replaces its optimistic bubble.
+  useEffect(() => {
+    setPending(current => settlePendingPrompts(current, userCount));
+  }, [userCount]);
+  useEffect(() => {
+    const expiry = nextPendingPromptExpiry(pending);
+    if (expiry === undefined) return;
+    const timer = setTimeout(() => {
+      setPending(current => settlePendingPrompts(current, userCountRef.current));
+    }, Math.max(0, expiry - Date.now()) + 50);
+    return () => clearTimeout(timer);
+  }, [pending]);
   useEffect(() => {
     if (!speaking) return;
     return listenToChat(
@@ -485,7 +522,7 @@ export function CodexChatScreen({
   }, []);
   useEffect(() => {
     let cancelled = false;
-    if (!snapshot.connected) {
+    if (!connected) {
       setLoading(false);
       return;
     }
@@ -504,7 +541,7 @@ export function CodexChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [daemon, threadId, snapshot.connected, snapshot.connectionId]);
+  }, [daemon, threadId, connected, connectionId]);
   useEffect(() => {
     let cancelled = false;
     drafts
@@ -596,27 +633,52 @@ export function CodexChatScreen({
     setSending(true);
     setError('');
     const message = currentText.current;
+    const sent = attachments;
+    const images = sent.filter(a => a.image).map(a => a.path);
+    const body = [message, ...sent.filter(a => !a.image).map(a => a.path)]
+      .filter(Boolean)
+      .join('\n');
+    const id = `codex-${++promptSequence.current}`;
+    // Show the prompt at once and free the composer for the next thought. The
+    // saved draft stays until Codex accepts the turn, so a failure loses nothing.
+    setPending(current => [
+      ...current,
+      { id, text: body, images, state: 'sending', baseline: userCountRef.current },
+    ]);
+    currentText.current = '';
+    setText('');
+    input.current?.clear();
+    setAttachments([]);
     void daemon
-      .send(
-        threadId,
-        [message, ...attachments.filter(a => !a.image).map(a => a.path)]
-          .filter(Boolean)
-          .join('\n'),
-        attachments.filter(a => a.image).map(a => a.path),
-        model,
-        effort,
-      )
+      .send(threadId, body, images, model, effort)
       .then(() => {
-        if (active.current) {
-          if (currentText.current === message) {
-            change('');
-            input.current?.clear();
-          }
-          setAttachments([]);
-        }
+        if (!active.current) return;
+        const sentAt = Date.now();
+        setPending(current =>
+          current.map(p => (p.id === id ? { ...p, state: 'sent', sentAt } : p)),
+        );
+        if (!currentText.current)
+          void drafts
+            .save(hostId, key, '')
+            .catch(e => setError(`Draft could not be saved: ${String(e)}`));
       })
       .catch(e => {
-        if (active.current) setError(String(e));
+        if (!active.current) return;
+        // Delivery is uncertain, so the message returns to the composer for a
+        // deliberate retry instead of being resent automatically.
+        setPending(current => current.filter(p => p.id !== id));
+        const restored = currentText.current
+          ? `${message}\n${currentText.current}`
+          : message;
+        currentText.current = restored;
+        setText(restored);
+        input.current?.setNativeProps({ text: restored });
+        if (restored !== message)
+          void drafts
+            .save(hostId, key, restored)
+            .catch(reason => setError(`Draft could not be saved: ${String(reason)}`));
+        setAttachments(old => [...sent, ...old]);
+        setError(String(e));
       })
       .finally(() => {
         busy.current = false;
@@ -625,7 +687,9 @@ export function CodexChatScreen({
     return true;
   };
   const openSettings = async () => {
-    setSettings(v => !v);
+    setSettings(true);
+    if (models.length || modelsLoading) return;
+    setModelsLoading(true);
     try {
       const values: CodexModel[] = [];
       let cursor: string | undefined;
@@ -637,16 +701,38 @@ export function CodexChatScreen({
         values.push(...r.data);
         cursor = r.nextCursor;
       } while (cursor);
-      setModels(values.filter(v => !v.hidden));
+      if (active.current) setModels(values.filter(v => !v.hidden));
     } catch (e) {
-      setError(String(e));
+      if (active.current) setError(String(e));
+    } finally {
+      if (active.current) setModelsLoading(false);
     }
   };
-  const pending = snapshot.requests.filter(r => r.params.threadId === threadId);
-  const status = pending.some(r => r.params.isBlocking !== false)
+  const stop = () => {
+    if (stopping) return;
+    setStopping(true);
+    void daemon
+      .interrupt(threadId)
+      .catch(e => {
+        if (active.current) setError(String(e));
+      })
+      .finally(() => {
+        if (active.current) setStopping(false);
+      });
+  };
+  const threadRequests = requests.filter(r => r.params.threadId === threadId);
+  const status = threadRequests.some(r => r.params.isBlocking !== false)
     ? 'blocked'
     : (thread?.status ?? 'idle');
   const working = chat.transcript.turns.some(t => t.status === 'working');
+  // The live transcript (or a delivered prompt) shows work before the periodic
+  // thread list does; a new thread is not listed until it has history.
+  const headerStatus =
+    status !== 'blocked' && (working || pending.some(p => p.state === 'sent'))
+      ? 'working'
+      : status;
+  const title = thread?.name || chat.transcript.info?.title || 'Codex chat';
+  const cwd = thread?.cwd || chat.transcript.info?.directory;
   const effortChoices = [
     'default',
     ...(
@@ -663,19 +749,18 @@ export function CodexChatScreen({
     >
       <View className="border-b border-line">
         <ChatHeader
-          title={thread?.name || 'Codex chat'}
-          status={status}
-          online={snapshot.connected}
+          title={title}
+          status={headerStatus}
+          online={connected}
           subtitle={`codex · ${hostName}`}
-          path={shortHomePath(thread?.cwd)}
+          path={shortHomePath(cwd)}
           onBack={onBack}
           actions={working ? (
             <HeaderPill
               accessibilityLabel="Stop Codex"
-              label="Stop"
-              onPress={() => {
-                void daemon.interrupt(threadId).catch(e => setError(String(e)));
-              }}
+              disabled={stopping}
+              label={stopping ? 'Stopping…' : 'Stop'}
+              onPress={stop}
             />
           ) : null}
           options={[
@@ -697,15 +782,15 @@ export function CodexChatScreen({
             {
               icon: Folder,
               label: 'Remote files',
-              description: shortHomePath(thread?.cwd) || 'Browse this server',
-              onPress: () => onOpenFile(undefined, thread?.cwd),
+              description: shortHomePath(cwd) || 'Browse this server',
+              onPress: () => onOpenFile(undefined, cwd),
             },
             {
               icon: SquareTerminal,
               label: 'Open terminal',
               description: 'Open this conversation in Herdr',
               onPress: () => {
-                void onTerminal(threadId, thread?.cwd || '~').catch(e =>
+                void onTerminal(threadId, cwd || '~').catch(e =>
                   setError(String(e)),
                 );
               },
@@ -720,6 +805,12 @@ export function CodexChatScreen({
         onClose={() => setSettings(false)}
       >
         <Text className="ml-1 text-[13px] font-semibold text-text2">Model</Text>
+        {modelsLoading ? (
+          <View accessibilityRole="progressbar" accessibilityLabel="Loading models" className="flex-row items-center gap-2 px-1">
+            <BusySpinner color={colors.working} size={14} />
+            <Text className="text-[13px] text-text3">Loading models from this server…</Text>
+          </View>
+        ) : null}
         <View className="flex-row flex-wrap gap-2">
           <ChoiceChip
             label="Current model"
@@ -753,13 +844,13 @@ export function CodexChatScreen({
           ))}
         </View>
       </BottomSheet>
-      {error || snapshot.error ? (
+      {error || daemonError ? (
         <View
           className="mx-2.5 mt-2.5 flex-row items-center gap-3 rounded-[20px] p-3"
           style={{ backgroundColor: statusTint(colors.blocked, 0.1), borderWidth: 1, borderColor: statusTint(colors.blocked, 0.3) }}
         >
           <Text accessibilityRole="alert" className="min-w-0 flex-1 text-[13px] leading-[18px] text-blocked" numberOfLines={4}>
-            {error || snapshot.error}
+            {error || daemonError}
           </Text>
           <HeaderPill
             accessibilityLabel="Reconnect"
@@ -776,11 +867,6 @@ export function CodexChatScreen({
           />
         </View>
       ) : null}
-      {loading && !chat.transcript.messages.length ? (
-        <View className="items-center py-3">
-          <BusySpinner color={colors.working} size={18} />
-        </View>
-      ) : null}
       <View className="flex-1">
         <AgentChatView
           simpleChat
@@ -791,18 +877,19 @@ export function CodexChatScreen({
           contentInsets={{ top: 0, bottom: 0 }}
           latestButtonBottom={12}
           imageClient={client}
-          onOpenFile={target => onOpenFile(target, thread?.cwd)}
+          pendingPrompts={pending}
+          onOpenFile={target => onOpenFile(target, cwd)}
           onOpenWebLink={url => {
             void Linking.openURL(url).catch(e => setError(String(e)));
           }}
         />
       </View>
-      {pending.length ? (
+      {threadRequests.length ? (
         <ScrollView
           style={{ maxHeight: 360 }}
           keyboardShouldPersistTaps="handled"
         >
-          {pending.map(r => (
+          {threadRequests.map(r => (
             <PendingRequest
               key={`${r.connectionId}:${r.id}`}
               request={r}
@@ -825,7 +912,6 @@ export function CodexChatScreen({
             pasteTargetKey={key}
             placeholder={working ? 'Guide codex…' : 'Message codex…'}
             onChangeText={change}
-            editable={!sending}
             onImagePaste={a => {
               void stageClipboardAttachment(a)
                 .then(upload)

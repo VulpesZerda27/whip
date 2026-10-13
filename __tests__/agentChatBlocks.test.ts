@@ -1,5 +1,5 @@
-import type { TranscriptPart, TranscriptToolPart, TranscriptTurn } from '../src/agentChat';
-import { isQuestionTool, transcriptBlocks } from '../src/lib/agentChatBlocks';
+import type { TranscriptMessage, TranscriptPart, TranscriptToolPart, TranscriptTurn } from '../src/agentChat';
+import { isQuestionTool, stabilizeBlocks, transcriptBlocks } from '../src/lib/agentChatBlocks';
 function turn(parts: TranscriptPart[]): TranscriptTurn {
   return {
     id: 'turn', status: 'working', diffs: [],
@@ -92,5 +92,51 @@ describe.each([
     }
     const streaming = transcriptBlocks([turn([reasoning])], true, new Set());
     expect(streaming.find(row => row.type === 'part')).toMatchObject({ part: reasoning, streaming: true });
+  });
+});
+
+function chatTurn(change: Partial<TranscriptTurn>): TranscriptTurn {
+  return { id: 'turn', status: 'idle', diffs: [], assistants: [], ...change };
+}
+
+function chatMessage(id: string, role: 'user' | 'assistant', parts: TranscriptPart[]): TranscriptMessage {
+  return { id, role, parts, diffs: [] };
+}
+
+describe('pending prompts', () => {
+  const pending = (state: 'queued' | 'sending' | 'sent' | 'failed') => ({ id: 'p1', text: 'Next step', images: ['/srv/a.png'], state, baseline: 1 });
+
+  it('follow the transcript and carry their delivery state', () => {
+    const blocks = transcriptBlocks([chatTurn({})], false, new Set(), [pending('sending')]);
+    const row = blocks.find(block => block.id === 'pending:p1');
+    expect(row).toMatchObject({ type: 'user', pending: 'sending', spacing: 'turn' });
+    expect(row?.type === 'user' && row.message.parts.map(part => part.type)).toEqual(['image', 'text']);
+    expect(blocks.at(-1)?.id).toBe('pending:p1');
+  });
+
+  it('move the activity row below the delivered prompt', () => {
+    const blocks = transcriptBlocks([chatTurn({ status: 'working' })], true, new Set(), [pending('sent')]);
+    expect(blocks.filter(block => block.type === 'thinking').map(block => block.id)).toEqual(['pending:thinking']);
+    expect(blocks.at(-1)?.id).toBe('pending:thinking');
+  });
+
+  it('do not hide the agent activity row while only waiting to send', () => {
+    const blocks = transcriptBlocks([chatTurn({ status: 'working' })], true, new Set(), [pending('queued')]);
+    expect(blocks.filter(block => block.type === 'thinking').map(block => block.id)).toEqual([JSON.stringify(['turn', 'thinking'])]);
+  });
+});
+
+describe('stabilizeBlocks', () => {
+  it('reuses unchanged rows so memoized rows skip re-rendering', () => {
+    const user = chatMessage('user', 'user', [{ type: 'text', id: 'u', text: 'Hi' }]);
+    const reply = chatMessage('a', 'assistant', [{ type: 'text', id: 't', text: 'Hel' }]);
+    const first = stabilizeBlocks([], transcriptBlocks([chatTurn({ user, assistants: [reply] })], true, new Set()));
+    const grown = chatMessage('a', 'assistant', [{ type: 'text', id: 't', text: 'Hello' }]);
+    const current = chatTurn({ user, assistants: [grown] });
+    const second = stabilizeBlocks(first, transcriptBlocks([current], true, new Set()));
+    expect(second[0]).toBe(first[0]);
+    expect(second[1]).not.toBe(first[1]);
+    const third = stabilizeBlocks(second, transcriptBlocks([current], true, new Set()));
+    expect(third).toBe(second);
   });
 });

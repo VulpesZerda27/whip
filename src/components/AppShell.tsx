@@ -113,6 +113,12 @@ export function AppShell({
     setChatsScope(previous => ({ hostId, status, nonce: (previous?.nonce ?? 0) + 1 }));
     navigation.selectTab('chats');
   };
+  // The Codex selection belongs to one visit of the chat tab. Leaving it must
+  // forget the selection, or a Claude chat opened later (from New agent or a
+  // notification) would show the previous Codex conversation instead.
+  useEffect(() => {
+    if (navigation.state.tab !== 'chat') setCodexSelection(null);
+  }, [navigation.state.tab]);
   const codexHost = codexHosts.find(h=>h.hostId===codexSelection?.hostId);
   const codexVisible = Boolean(codexSelection && navigation.state.tab === 'chat');
   const openCodex = (hostId:string,threadId:string) => {

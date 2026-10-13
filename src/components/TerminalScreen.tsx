@@ -2119,7 +2119,9 @@ export const TerminalScreen = forwardRef<TerminalScreenHandle, Props>(
     } satisfies ComponentProps<typeof ComposerInput>;
     const composerQueueAndAttachments = (
       <ComposerQueueAndAttachments
-        messages={queuedMessages}
+        // Chat shows in-flight prompts in the conversation; the outbox keeps
+        // only those still waiting, where Undo applies.
+        messages={simpleChat ? queuedMessages.filter(message => !message.sending) : queuedMessages}
         attachments={composeAttachments}
         onUnqueue={unqueueComposeMessage}
         onRemove={removeComposeAttachment}

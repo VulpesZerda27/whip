@@ -101,6 +101,9 @@ jest.mock('../src/components/TerminalScreen', () => {
 jest.mock('../src/components/AgentChatView', () => ({
   AgentChatView: 'AgentChatView',
 }));
+jest.mock('../src/components/ChatSkeleton', () => ({
+  ChatSkeleton: 'ChatSkeleton',
+}));
 jest.mock('../src/components/AgentIntegrationInstallSheet', () => ({
   AgentIntegrationInstallSheet: 'IntegrationSheet',
 }));
@@ -1450,4 +1453,83 @@ test.each([false, true])('Claude startup respects an explicit terminal choice (%
     await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat />); });
     expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
   }
+});
+
+test('an existing Claude conversation loads behind a chat skeleton instead of the startup panel', async () => {
+  const host = setup('claude');
+  bindChat(host, 'claude');
+  let restore!: (value: null) => void;
+  jest.mocked(agentChatCache.loadNative).mockReturnValueOnce(new Promise(resolve => { restore = resolve; }));
+  await act(async () => { renderer = create(<SessionScreen {...host.props} preferChat />); });
+  expect(control().loading).toBe(true);
+  expect(renderer.root.findAllByProps({ testID: 'claude-chat-startup' })).toHaveLength(0);
+  expect(renderer.root.findAllByProps({ testID: 'chat-opening' })).toHaveLength(1);
+  await act(async () => { restore(null); });
+});
+
+test('Claude composer submissions show in chat until its transcript echoes them', async () => {
+  const host = setup('claude');
+  const binding = await openReadyChat(host, 'claude');
+  revealChat();
+  const queue = (items: { id: number; historyEntry: string; sending: boolean; error: string | null }[]) =>
+    act(() => { ui('TerminalScreen').props.onComposerQueueChange('terminal-1', items); });
+  queue([{ id: 1, historyEntry: 'Fix the bug', sending: true, error: null }]);
+  expect(ui('AgentChatView').props.pendingPrompts).toEqual([
+    expect.objectContaining({ text: 'Fix the bug', state: 'sending', baseline: 0 }),
+  ]);
+  queue([]);
+  expect(ui('AgentChatView').props.pendingPrompts).toEqual([
+    expect.objectContaining({ text: 'Fix the bug', state: 'sent' }),
+  ]);
+  const user = { id: 'user-1', role: 'user' as const, parts: [{ type: 'text' as const, id: 'text-1', text: 'Fix the bug' }], diffs: [] };
+  act(() => {
+    host.handlers.get(binding.terminalId)?.({
+      key: binding.transcriptKey, runtimeIncarnation: binding.runtimeIncarnation, revision: 2,
+      deltas: [
+        { type: 'message-upserted', index: 0, message: user },
+        { type: 'turn-upserted', index: 0, turn: { id: 'turn-1', userMessageId: 'user-1', assistantMessageIds: [], status: 'working', diffs: [] } },
+      ],
+    } as never);
+  });
+  expect(ui('AgentChatView').props.pendingPrompts).toBeUndefined();
+});
+
+test('a chat opened offline hands over to the live chat once the host is back', async () => {
+  const host = setup('claude');
+  jest.spyOn(agentChatCache, 'listNative').mockResolvedValue([]);
+  const offline = {
+    client: null,
+    terminalTargets: [],
+    terminalState: {
+      activeTerminalId: host.pane.terminal_id,
+      sessions: [{ ...host.props.terminalState.sessions[0], status: 'disconnected' as const }],
+    },
+  };
+  act(() => { renderer = create(<SessionScreen {...host.props} {...offline} />); });
+  await act(async () => { await control().onPress(); });
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+  expect(renderer.root.findAllByType('AgentChatView' as never)).toHaveLength(0);
+  const binding = bindChat(host, 'claude');
+  host.native.startAgentChat.mockImplementation(() => {
+    binding.state = { ...binding.state, status: 'live', revision: 1 };
+    return { type: 'started', state: binding.state };
+  });
+  await act(async () => { renderer.update(<SessionScreen {...host.props} />); });
+  for (let i = 0; i < 3; i++) await act(async () => { await Promise.resolve(); });
+  // The live chat prepares beneath the saved overlay, which shows loading, not an error.
+  expect(renderer.root.findAllByType('ChatSkeleton' as never).length).toBeGreaterThan(0);
+  const live = ui('AgentChatView');
+  act(() => { live.props.onInitialViewportReady(); });
+  expect(renderer.root.findAllByType('ChatSkeleton' as never)).toHaveLength(0);
+  expect(ui('AgentChatView').props.state.status).toBe('live');
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+});
+
+test('a chat chosen before its terminal binding exists shows the conversation frame, not a blank canvas', async () => {
+  const host = setup('claude');
+  await act(async () => { renderer = create(<SessionScreen {...host.props} preferChat terminalTargets={[]} />); });
+  expect(renderer.root.findAllByProps({ testID: 'chat-opening' })).toHaveLength(1);
+  expect(renderer.root.findAllByProps({ accessibilityLabel: 'Back to Chats' }).length).toBeGreaterThan(0);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat={false} terminalTargets={[]} />); });
+  expect(renderer.root.findAllByProps({ testID: 'chat-opening' })).toHaveLength(0);
 });
