@@ -1572,3 +1572,45 @@ test('a delivered Claude prompt shows Working until the pane reports its own sta
   withStatus('idle');
   expect(header()).toBe('idle');
 });
+
+test('a new Claude chat whose automatic open meets a host resync opens once the background binding arrives', async () => {
+  const host = setup('claude');
+  const showPane = (revision: number) => {
+    const snapshot = { ...host.props.snapshot, panes: [{ ...host.pane, revision }] };
+    host.setSnapshot(snapshot);
+    host.props.snapshot = snapshot;
+  };
+  let resyncing = true;
+  const open = host.native.openAgentChat.getMockImplementation()!;
+  host.native.openAgentChat.mockImplementation((terminalId: string, handler?: (event: NativeAgentTranscriptUpdate) => void) =>
+    resyncing ? { type: 'no-chat', terminalId, reason: 'host-state-unavailable' } : open(terminalId, handler));
+  const binding = bindChat(host, 'claude');
+  host.native.startAgentChat.mockImplementation(() => ({ type: 'started', state: { ...binding.state, status: 'live' } }));
+
+  showPane(1);
+  await act(async () => { renderer = create(<SessionScreen {...host.props} preferChat />); });
+  expect(ui('Alert').props.visible).toBe(false);
+
+  // The next snapshot after the resync lets the background preload bind.
+  resyncing = false;
+  showPane(2);
+  await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat />); });
+  expect(host.native.startAgentChat).toHaveBeenCalledTimes(1);
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(true);
+  expect(renderer.root.findAllByProps({ testID: 'chat-opening' })).toHaveLength(1);
+  expect(ui('Alert').props.visible).toBe(false);
+});
+
+test('a background Claude binding stays dormant after an explicit terminal choice', async () => {
+  const host = setup('claude');
+  host.pane.agent_session = undefined;
+  host.pane.agent_status = 'blocked';
+  await act(async () => { renderer = create(<SessionScreen {...host.props} preferChat />); });
+  await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Open terminal during Claude startup' }).props.onPress(); });
+  host.pane.agent_session = { agent: 'claude', kind: 'id', source: 'herdr:claude', value: 'new-session' };
+  host.pane.agent_status = 'idle';
+  bindChat(host, 'claude');
+  await act(async () => { renderer.update(<SessionScreen {...host.props} preferChat />); });
+  expect(ui('TerminalScreen').props.chatViewEnabled).toBe(false);
+  expect(control().loading).toBe(false);
+});

@@ -65,7 +65,7 @@ export function useAgentChatOpen(options: Options) {
     };
   }, [hostSessionId, terminalId, pane?.pane_id, visible, client, cancel]);
 
-  const run = async (integration?: PendingAgentIntegration) => {
+  const run = async (integration?: PendingAgentIntegration, automatic = false) => {
     if (!client || !terminalId || !visible || (integration && installingRef.current))
       return;
     installingRef.current = Boolean(integration);
@@ -120,6 +120,12 @@ export function useAgentChatOpen(options: Options) {
       diagnose('native-no-chat', projection.reason);
       switch (projection.reason) {
         case 'host-state-unavailable':
+          // Herdr briefly resyncs, e.g. when a new pane appears. An automatic
+          // open waits for the background binding instead of reporting it.
+          if (automatic) {
+            diagnose('deferred', projection.reason);
+            return;
+          }
           throw new Error(
             'The host state is unavailable. Reconnect to the host and try Chat again.',
           );
@@ -197,6 +203,8 @@ export function useAgentChatOpen(options: Options) {
     dismissNotice: () => setNotice(null),
     cancel,
     open: () => run(),
+    /** Opening Chat for the selected agent without a user request. */
+    openAutomatically: () => run(undefined, true),
     install: () =>
       notice?.type === 'integration'
         ? run(notice.integration)

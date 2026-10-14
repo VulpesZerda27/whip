@@ -994,6 +994,14 @@ export function SessionScreen({
           preloadTarget.hostSessionId, preloadTarget.session.terminalId, preloadTarget.client.native,
         )
       : null;
+    // In Chat, the selected agent's first binding is the chat being opened. A
+    // dormant view would hide the startup frame and leave Terminal showing,
+    // e.g. when a new Claude reports its session after an automatic open failed.
+    const preloadPresentation =
+      preloadTarget && preload?.type === 'bound' && preferChat &&
+      startupTerminalKey !== preloadTarget.key
+        ? requestedChatPresentation(preload.state)
+        : dormantChatPresentation();
     setChatViews(current => {
       const next = reconcileAgentChatViews(
         current,
@@ -1010,7 +1018,7 @@ export function SessionScreen({
         return new Map(next).set(preloadTarget.key, {
           binding: preload.binding,
           state: preload.state,
-          presentation: dormantChatPresentation(),
+          presentation: preloadPresentation,
         });
       }
       return next;
@@ -1027,6 +1035,8 @@ export function SessionScreen({
     terminalState.sessions,
     terminalTargets,
     requestedChatPresentation,
+    preferChat,
+    startupTerminalKey,
   ]);
 
   useLayoutEffect(() => {
@@ -1476,7 +1486,8 @@ export function SessionScreen({
     });
   }, [activeTerminalSession?.terminalId, activeTarget, cancelChatOpen, savedChatOpen, updateChatRestoreIntent]);
 
-  const openAgentChat = () => {
+  const openAgentChat = () => openChat(false);
+  const openChat = (automatic: boolean) => {
     setStartupTerminalKey(null);
     if (!client) return openSavedChat();
     if (activeChatView && chatPresentationRequested(activeChatView.presentation)) return;
@@ -1507,12 +1518,12 @@ export function SessionScreen({
         recordAgentChatDiagnostic('warm-binding-unavailable', { error: String(error) });
       }
     }
-    return chatOpen.open();
+    return automatic ? chatOpen.openAutomatically() : chatOpen.open();
   };
 
   const automaticChatTarget = useRef<string | null>(null);
   const openPreferredChat = useEffectEvent(() => {
-    reportBackgroundFailure(Promise.resolve(openAgentChat()), 'preferred-chat-open');
+    reportBackgroundFailure(Promise.resolve(openChat(true)), 'preferred-chat-open');
   });
   const preferredTarget = activePane && preferredAgent
     ? `${hostSessionId}:${activePane.pane_id}:${activePane.agent_session?.value || preferredAgent}`
