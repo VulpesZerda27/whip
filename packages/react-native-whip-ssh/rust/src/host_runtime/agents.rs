@@ -16,6 +16,8 @@ use crate::herdr_api::{
 
 const AGENT_SHELL_READINESS_TIMEOUT: Duration = Duration::from_secs(2);
 const AGENT_SHELL_READINESS_INTERVAL: Duration = Duration::from_millis(100);
+const AGENT_NAME_MAX_LEN: usize = 32;
+const AGENT_NAME_ATTEMPTS: usize = 32;
 
 pub(super) fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: f64) -> String {
     let mut normalized = String::new();
@@ -42,8 +44,18 @@ pub(super) fn managed_agent_name(label: &str, kind: HerdrAgentKind, tab_number: 
     if normalized.is_empty() {
         normalized = format!("{}-{tab_number}", kind.as_str());
     }
-    normalized.truncate(normalized.len().min(32));
+    normalized.truncate(normalized.len().min(AGENT_NAME_MAX_LEN));
     normalized
+}
+
+/// The next candidate after `base` was taken: `review-fix-2`, `review-fix-3`, …
+pub(super) fn numbered_agent_name(base: &str, number: usize) -> String {
+    let suffix = format!("-{number}");
+    let stem = base
+        .chars()
+        .take(AGENT_NAME_MAX_LEN.saturating_sub(suffix.len()))
+        .collect::<String>();
+    format!("{}{suffix}", stem.trim_end_matches('-'))
 }
 
 pub(super) async fn integration_status_with_request<F, Fut>(
@@ -275,7 +287,7 @@ where
 }
 
 pub(super) async fn launch_in_created_tab<F, Fut>(
-    request: HerdrControlRequest,
+    mut request: HerdrControlRequest,
     send: &mut F,
 ) -> Result<HerdrControlResult, HerdrControlError>
 where
@@ -283,11 +295,29 @@ where
     Fut: Future<Output = Result<HerdrControlResult, HerdrControlError>>,
 {
     let mut retry_deadline = None;
+    let base_name = match &request {
+        HerdrControlRequest::AgentStart { name, .. } => Some(name.clone()),
+        _ => None,
+    };
+    let mut name_attempts = 1;
     loop {
         let error = match send(request.clone()).await {
             Ok(result) => return Ok(result),
             Err(error) => error,
         };
+        // Agent names are unique across the whole Herdr server and can stay
+        // with a pane after its agent exits, so the tab-derived name (such as
+        // claude-2 for every new workspace's second tab) is often taken. Herdr
+        // rejects the name before it writes anything to the pane.
+        if let (Some(base), HerdrControlRequest::AgentStart { name, .. }) =
+            (&base_name, &mut request)
+            && matches!(&error, HerdrControlError::ProtocolError(code, _) if code == "agent_name_taken")
+            && name_attempts < AGENT_NAME_ATTEMPTS
+        {
+            name_attempts += 1;
+            *name = numbered_agent_name(base, name_attempts);
+            continue;
+        }
         // A newly created shell can still be initializing. This rejection is
         // issued before Herdr writes any agent input, so retrying is safe.
         // Never replay ambiguous failures or ordinary command submissions.

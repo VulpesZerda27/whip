@@ -979,8 +979,8 @@ fn new_tab_launch_does_not_replay_other_errors_or_command_input() {
             (
                 agent,
                 HerdrControlError::ProtocolError(
-                    "agent_name_taken".to_owned(),
-                    "duplicate name".to_owned(),
+                    "agent_not_found".to_owned(),
+                    "missing".to_owned(),
                 ),
             ),
             (
@@ -1023,6 +1023,121 @@ fn new_tab_launch_does_not_replay_other_errors_or_command_input() {
                 }
             );
         }
+    });
+}
+
+#[test]
+fn numbered_agent_names_stay_within_herdr_limit() {
+    assert_eq!(numbered_agent_name("claude-2", 2), "claude-2-2");
+    assert_eq!(
+        numbered_agent_name("a-very-long-tab-label-whose-agen", 12),
+        "a-very-long-tab-label-whose-a-12"
+    );
+    assert_eq!(
+        numbered_agent_name("a-very-long-tab-label-whose-agen", 3),
+        "a-very-long-tab-label-whose-ag-3"
+    );
+    assert_eq!(
+        numbered_agent_name("review-fix-label-that-is-at-32ch", 2).len(),
+        32
+    );
+}
+
+#[test]
+fn new_tab_agent_launch_picks_the_next_free_name() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = lifecycle_snapshot();
+        let mut tab = snapshot.tabs[0].clone();
+        tab.label = "2".to_owned();
+        tab.number = 2.0;
+        let root_pane = snapshot.panes[0].clone();
+        let taken = ["claude-2", "claude-2-2"];
+        let mut names = Vec::new();
+        let result = create_tab_with_launch_using(
+            tab.workspace_id.clone(),
+            String::new(),
+            HerdrTabLaunch::Agent {
+                kind: HerdrAgentKind::Claude,
+                args: Vec::new(),
+            },
+            |request| {
+                let response = match &request {
+                    HerdrControlRequest::TabCreate { .. } => Ok(HerdrControlResult::TabCreated {
+                        tab: tab.clone(),
+                        root_pane: root_pane.clone(),
+                    }),
+                    HerdrControlRequest::AgentStart { name, pane_id, .. } => {
+                        assert_eq!(pane_id, &root_pane.pane_id);
+                        names.push(name.clone());
+                        if taken.contains(&name.as_str()) {
+                            Err(HerdrControlError::ProtocolError(
+                                "agent_name_taken".to_owned(),
+                                format!("agent name {name} is already used"),
+                            ))
+                        } else {
+                            Ok(HerdrControlResult::AgentStarted {
+                                agent: snapshot.agents[0].clone(),
+                                argv: vec!["claude".to_owned()],
+                            })
+                        }
+                    }
+                    other => panic!("unexpected request {other:?}"),
+                };
+                std::future::ready(response)
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(names, ["claude-2", "claude-2-2", "claude-2-3"]);
+        assert_eq!(result, HerdrTabLaunchResult::Created { tab, root_pane });
+    });
+}
+
+#[test]
+fn new_tab_agent_launch_gives_up_after_bounded_name_attempts() {
+    crate::runtime().unwrap().block_on(async {
+        let snapshot = batch_test_snapshot();
+        let tab = snapshot.tabs[0].clone();
+        let root_pane = snapshot.panes[0].clone();
+        let error = HerdrControlError::ProtocolError(
+            "agent_name_taken".to_owned(),
+            "duplicate name".to_owned(),
+        );
+        let mut starts = 0;
+        let result = create_tab_with_launch_using(
+            tab.workspace_id.clone(),
+            tab.label.clone(),
+            HerdrTabLaunch::Agent {
+                kind: HerdrAgentKind::Codex,
+                args: Vec::new(),
+            },
+            |request| {
+                let response = if matches!(request, HerdrControlRequest::TabCreate { .. }) {
+                    Ok(HerdrControlResult::TabCreated {
+                        tab: tab.clone(),
+                        root_pane: root_pane.clone(),
+                    })
+                } else {
+                    starts += 1;
+                    Err(error.clone())
+                };
+                std::future::ready(response)
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(starts, 32);
+        assert_eq!(
+            result,
+            HerdrTabLaunchResult::LaunchFailed {
+                tab,
+                root_pane,
+                stage: HerdrTabLaunchStage::AgentStart,
+                failure: error.into(),
+            }
+        );
     });
 }
 
