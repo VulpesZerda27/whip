@@ -37,7 +37,7 @@ export function useCodexHosts(
   const connections = sessions.presentationSessions
     .map(session => ({
       session,
-      native: sessions.getClient(session.id)?.native,
+      native: sessions.getClient(session.id)?.activeNative,
     }))
     .filter(v => v.native);
   const identity = connections

@@ -21,7 +21,7 @@ test('closed Codex history cannot generate new notifications, including after a 
   const session = { id: 'session', hostId: 'host', host: { name: 'Server' }, connectionStatus: 'ready', hostState: { freshness: 'fresh' },
     snapshot: { agents: [{ agent: 'codex', agent_session: { agent: 'codex', kind: 'id', source: 'herdr:codex', value: 'open' } }] } };
   const native = {};
-  const sessions = { presentationSessions: [session], getClient: () => ({ native }) };
+  const sessions = { presentationSessions: [session], getClient: () => ({ activeNative: native }) };
   function Harness() {
     useCodexHosts(sessions as unknown as SessionRuntimeController, true, { alertsEnabled: true, agentAlertLevel: 'regular', persistentAlertDurationSeconds: 30, ttsEnabled: false });
     return null;
@@ -56,7 +56,7 @@ test('streamed transcript updates do not re-render the app shell; list changes d
   jest.mocked(codexClient).mockReturnValue(client as unknown as CodexDaemonClient);
   const session = { id: 'session', hostId: 'host', host: { name: 'Server' }, connectionStatus: 'ready', hostState: { freshness: 'fresh' },
     snapshot: { agents: [] } };
-  const sessions = { presentationSessions: [session], getClient: () => ({ native: {} }) };
+  const sessions = { presentationSessions: [session], getClient: () => ({ activeNative: {} }) };
   let renders = 0;
   function Harness() {
     renders += 1;
@@ -76,5 +76,23 @@ test('streamed transcript updates do not re-render the app shell; list changes d
     notify();
   });
   expect(renders).toBe(baseline + 1);
+  act(() => renderer.unmount());
+});
+
+test('a session whose runtime is not attached yet renders without Codex hosts', async () => {
+  const session = { id: 'session', hostId: 'host', host: { name: 'Server' }, connectionStatus: 'connecting', snapshot: { agents: [] } };
+  const client = {
+    activeNative: null,
+    get native(): never { throw new Error('Host runtime is not active'); },
+  };
+  const sessions = { presentationSessions: [session], getClient: () => client };
+  let hosts: unknown[] = [];
+  function Harness() {
+    hosts = useCodexHosts(sessions as unknown as SessionRuntimeController, true, { alertsEnabled: false, agentAlertLevel: 'regular', persistentAlertDurationSeconds: 30, ttsEnabled: false });
+    return null;
+  }
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(<Harness />); });
+  expect(hosts).toEqual([]);
   act(() => renderer.unmount());
 });
