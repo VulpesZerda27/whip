@@ -20,10 +20,11 @@
     "start": "node scripts/sync-terminal-assets.mjs && expo start --dev-client",
     "doctor": "expo-doctor",
     "lint": "eslint . --max-warnings 0 --report-unused-disable-directives",
-    "test": "jest",
+    "test": "npm run test:security-dependencies && jest",
     "postinstall": "patch-package && node scripts/sync-terminal-assets.mjs && bash scripts/build-ios-uniffi.sh",
     "generate:ios-uniffi": "WHIP_BUILD_IOS_UNIFFI=1 bash scripts/build-ios-uniffi.sh",
-    "eas-build-pre-install": "bash scripts/prepare-eas-ios.sh"
+    "eas-build-pre-install": "bash scripts/prepare-eas-ios.sh",
+    "test:security-dependencies": "node --test scripts/security-dependencies.test.cjs"
   },
   "dependencies": {
     "@callstack/liquid-glass": "0.8.2",
@@ -152,7 +153,11 @@
     "metro": "0.84.5",
     "react-syntax-highlighter": "$react-syntax-highlighter",
     "sharp": "$sharp",
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "http-cache-semantics": "4.3.0",
+    "launch-editor": "2.14.2",
+    "hono": "4.13.13",
+    "postcss-selector-parser": "7.1.6"
   },
   "expo": {
     "doctor": {
