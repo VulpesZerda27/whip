@@ -226,7 +226,9 @@ pub struct HostLatencyMeasurement {
     reason = "UniFFI data enums cannot box associated records without changing the native API"
 )]
 pub enum HostRuntimeEvent {
-    CodexActivity { runtime_id: String },
+    CodexActivity {
+        runtime_id: String,
+    },
     ConnectionStateChanged {
         runtime_id: String,
         status: HostRuntimeStatus,
